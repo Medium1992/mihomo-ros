@@ -24,11 +24,13 @@
     "proxy-providers": {
       kind: "prov", title: "proxy-providers", dir: "proxy-providers",
       hint: "<code>/etc/mihomo/proxy-providers/</code> · файлы провайдеров прокси",
+      doc: "https://wiki.metacubex.one/ru/config/proxy-providers/content/",
       tpl: "proxies:\n  - \n", newName: "my-sub.yaml",
     },
     "provider-rules": {
       kind: "prov", title: "provider-rules", dir: "provider-rules",
       hint: "<code>/etc/mihomo/provider-rules/</code> · файлы провайдеров правил",
+      doc: "https://wiki.metacubex.one/ru/config/rule-providers/content/",
       tpl: "payload:\n  - \n", newName: "my-rules.yaml",
     },
   };
@@ -368,14 +370,20 @@
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
     finally { setBusy(false); }
   }
-  async function apply() {
+  async function apply(force) {
     if (busy) return;
-    setBusy(true); setConsole("Применение…", "Проверка и горячая перезагрузка ядра…", "muted");
+    const hard = force === true;
+    setBusy(true);
+    setConsole("Применение…", hard
+      ? "Проверка и ПОЛНАЯ перезагрузка (порты/листенеры/TUN)…"
+      : "Проверка и мягкое горячее обновление ядра…", "muted");
     try {
-      const j = await jsonFetch("/cgi-bin/save-config", txtPost(cfgFull));
+      const j = await jsonFetch("/cgi-bin/save-config?force=" + (hard ? "true" : "false"), txtPost(cfgFull));
       if (j.ok) {
         dirty = false;
-        setConsole("Применено", "Конфиг сохранён и применён ✓", "ok");
+        setConsole("Применено", hard
+          ? "Конфиг сохранён, выполнена полная перезагрузка ✓"
+          : "Конфиг сохранён и мягко применён ✓", "ok");
         showToast("Конфиг применён ✓", "ok"); refreshStatus();
       } else {
         const stage = j.stage === "apply" ? "Сохранён, но перезагрузка не удалась" : "Ошибка валидации";
@@ -418,6 +426,7 @@
       code.value = await r.text();
       curFile = file; dirty = false; renderGutter();
       $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + file;
+      setResPath(file);
       setConsole("Файл", file, "muted"); markSel();
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
   }
@@ -484,7 +493,7 @@
       if (j.ok) {
         showToast("Удалён", "ok");
         curFile = null; code.value = ""; dirty = false; renderGutter();
-        $("cfgPath").textContent = "";
+        $("cfgPath").textContent = ""; setResPath(null);
         setConsole("Консоль", "Файл удалён.", "muted"); loadFileList();
       } else { setConsole("Ошибка", j.output || "unknown", "err"); }
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
@@ -502,8 +511,19 @@
     code.value = r.tpl;
     dirty = true; renderGutter();
     $("cfgPath").textContent = "/etc/mihomo/" + r.dir + "/" + name + " (не сохранён)";
+    setResPath(name);
     setConsole("Новый файл", "Отредактируй и нажми «Сохранить».", "muted");
     code.focus();
+  }
+  // строка с путём для вставки в конфиг (только proxy-providers / provider-rules)
+  function setResPath(file) {
+    const bar = $("resPath");
+    if (isRes(view) && RES[view].kind === "prov" && file) {
+      $("resPathText").textContent = "./" + RES[view].dir + "/" + file;
+      bar.hidden = false;
+    } else {
+      bar.hidden = true;
+    }
   }
 
   /* ── view switching ─────────────────────────────────────── */
@@ -524,7 +544,17 @@
     $("editorWrap").hidden = tools;       // у инструментов своя панель вместо редактора
     $("console").hidden = tools;
     $("toolsPane").hidden = !tools;
-    $("secDoc").hidden = !yaml;           // шпаргалка с докой — только для конфига
+    $("resPath").hidden = true;           // строка пути покажется при выборе файла
+    // верхняя строка-шпаргалка: для конфига — по разделам (renderSecDoc),
+    // для proxy-providers/provider-rules — ссылка на доку, иначе скрыта
+    const prov = kind === "prov";
+    if (prov) {
+      $("secDocNote").textContent = "Какие файлы можно создавать и чем их наполнять — в документации mihomo.";
+      $("secDocLink").href = RES[v].doc;
+      $("secDoc").hidden = false;
+    } else {
+      $("secDoc").hidden = !yaml;          // yaml: контент ставит renderSecDoc
+    }
     const title = yaml ? "config.yaml" : tools ? "Инструменты" : RES[v].title;
     $("viewTitle").textContent = title;
     $("filesTitle").textContent = title;
@@ -550,26 +580,44 @@
       } else { cfgSel = null; loadConfig(); refreshStatus(); }
     } else if (tools) {
       buildToolsList();
-      setConsole("Инструменты", "Выбери инструмент слева.", "muted");
+      selectTool(curTool);
     } else if (s) {
       code.value = s.text; dirty = s.dirty; curFile = s.curFile || null;
       $("cfgPath").textContent = s.cfgPath || "";
-      renderGutter(); loadFileList();
+      renderGutter(); setResPath(curFile); loadFileList();
     } else {
       dirty = false; curFile = null; $("cfgPath").textContent = "";
-      code.value = ""; renderGutter();
+      code.value = ""; renderGutter(); setResPath(null);
       setConsole("Консоль", "Выбери файл слева или создай новый.", "muted");
       loadFileList();
     }
   }
 
   /* ════════════════ tools view ════════════════ */
+  const TOOLS = [
+    { id: "hash", label: "Хеш-пароль", card: "toolHash" },
+    { id: "awg", label: "AWG → YAML", card: "toolAwg" },
+    { id: "toml", label: "TOML → YAML", card: "toolToml" },
+    { id: "openvpn", label: "OpenVPN → YAML", card: "toolOpenvpn" },
+  ];
+  let curTool = "hash";
   function buildToolsList() {
     const ul = $("filesList"); ul.innerHTML = "";
-    const li = document.createElement("li");
-    li.className = "file-item sel"; li.dataset.tool = "hash";
-    li.innerHTML = '<span class="file-name">Хеш-пароль</span>';
-    ul.appendChild(li);
+    TOOLS.forEach((t) => {
+      const li = document.createElement("li");
+      li.className = "file-item" + (t.id === curTool ? " sel" : "");
+      li.dataset.tool = t.id;
+      li.innerHTML = '<span class="file-name"></span>';
+      li.querySelector(".file-name").textContent = t.label;
+      li.addEventListener("click", () => selectTool(t.id));
+      ul.appendChild(li);
+    });
+  }
+  function selectTool(id) {
+    curTool = id;
+    TOOLS.forEach((t) => { $(t.card).hidden = (t.id !== id); });
+    document.querySelectorAll("#filesList .file-item")
+      .forEach((li) => li.classList.toggle("sel", li.dataset.tool === id));
   }
   async function genHash() {
     const pwd = $("hashPwd").value;
@@ -582,10 +630,22 @@
     } catch (e) { showToast(String(e), "err"); }
     finally { setBusy(false); }
   }
-  function copyHash() {
-    const v = $("hashOut").value; if (!v) return;
-    $("hashOut").select();
-    if (navigator.clipboard) navigator.clipboard.writeText(v);
+  // конвертеры конфигов (AWG / TrustTunnel toml / OpenVPN) -> proxies YAML
+  async function runConvert(kind, inId, outId, btnId) {
+    const body = $(inId).value.trim();
+    if (!body) { showToast("Вставьте конфиг", "err"); return; }
+    const btn = $(btnId); if (btn) btn.disabled = true;
+    try {
+      const j = await jsonFetch("/cgi-bin/convert?kind=" + encodeURIComponent(kind), txtPost(body));
+      if (j.ok) { $(outId).value = j.output; showToast("Готово ✓", "ok"); }
+      else { $(outId).value = ""; showToast(j.output || "не распознано", "err"); }
+    } catch (e) { showToast(String(e), "err"); }
+    finally { if (btn) btn.disabled = false; }
+  }
+  function copyField(id) {
+    const el = $(id); if (!el || !el.value) return;
+    el.select();
+    if (navigator.clipboard) navigator.clipboard.writeText(el.value);
     else document.execCommand("copy");
     showToast("Скопировано", "ok");
   }
@@ -595,7 +655,11 @@
     a.addEventListener("click", () => switchView(a.dataset.view)));
 
   $("validateBtn").addEventListener("click", validate);
-  $("applyBtn").addEventListener("click", apply);
+  $("applyBtn").addEventListener("click", () => apply(false));
+  $("applyFullBtn").addEventListener("click", () => {
+    if (!confirm("Полная перезагрузка пересоздаёт порты/листенеры/TUN и разорвёт текущие соединения. Продолжить?")) return;
+    apply(true);
+  });
   $("reloadBtn").addEventListener("click", () => {
     if (dirty && !confirm("Изменения не сохранены. Сбросить и перечитать с диска?")) return;
     loadConfig();
@@ -618,8 +682,19 @@
   $("prvDeleteBtn").addEventListener("click", deleteFile);
   $("prvSaveBtn").addEventListener("click", saveFile);
   $("newBtn").addEventListener("click", newFile);
+  $("resPathCopy").addEventListener("click", () => {
+    const t = $("resPathText").textContent; if (!t) return;
+    if (navigator.clipboard) navigator.clipboard.writeText(t);
+    showToast("Путь скопирован", "ok");
+  });
   $("hashGen").addEventListener("click", genHash);
-  $("hashCopy").addEventListener("click", copyHash);
+  $("hashCopy").addEventListener("click", () => copyField("hashOut"));
+  $("awgGen").addEventListener("click", () => runConvert("awg", "awgIn", "awgOut", "awgGen"));
+  $("awgCopy").addEventListener("click", () => copyField("awgOut"));
+  $("tomlGen").addEventListener("click", () => runConvert("toml", "tomlIn", "tomlOut", "tomlGen"));
+  $("tomlCopy").addEventListener("click", () => copyField("tomlOut"));
+  $("ovpnGen").addEventListener("click", () => runConvert("openvpn", "ovpnIn", "ovpnOut", "ovpnGen"));
+  $("ovpnCopy").addEventListener("click", () => copyField("ovpnOut"));
 
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
