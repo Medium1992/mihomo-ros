@@ -1,0 +1,13 @@
+#!/bin/sh
+# Пример хук-скрипта.
+# Любой *.sh в /etc/mihomo/scripts/ выполняется entrypoint при старте контейнера
+# (до запуска ядра). Переименуй в "10-example.sh", чтобы включить.
+#
+# Доступные переменные окружения: MIHOMO_DIR, API_HOST, API_PORT, API_SECRET, CONFIG
+#
+# Примеры применения:
+#   - докачать гео-базы:   curl -fsSL <url> -o "$MIHOMO_DIR/geoip.metadb"
+#   - сгенерировать provider-rules/*.list из своих списков
+#   - подтянуть подписку в proxy-providers/*.yaml
+
+echo "[hook] example hook ran, MIHOMO_DIR=$MIHOMO_DIR"

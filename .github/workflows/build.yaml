@@ -1,0 +1,346 @@
+name: Build and Publish
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 18:00 UTC — следом за релизами mihomo
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GHCR: ghcr.io/medium1992/mihomo-ros
+      HUB: medium1992/mihomo-ros
+      PACKAGE_OWNER: medium1992
+      PACKAGE_NAME: mihomo-ros
+      DELETE_UNTAGGED: "true"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get latest mihomo release
+        run: |
+          MIHOMO=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.tag_name')
+          [ -n "$MIHOMO" ] && [ "$MIHOMO" != "null" ] || { echo "no mihomo tag"; exit 1; }
+          echo "mihomo=$MIHOMO" >> $GITHUB_ENV
+          echo "mihomo: $MIHOMO"
+
+      - name: Decide if build is needed
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run → force build"
+            echo "build_needed=true" >> $GITHUB_OUTPUT
+          elif [ -f VERSIONS ] && grep -qx "mihomo=${{ env.mihomo }}" VERSIONS; then
+            echo "Already built ${{ env.mihomo }}"
+            echo "build_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "New mihomo version → build"
+            echo "build_needed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up QEMU
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/setup-qemu-action@v4
+        with:
+          cache-image: false
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # amd64 v1 — baseline (любой x86-64), отдельный тег
+      - name: Build and push amd64v1
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            AMD64VERSION=v1
+          tags: |
+            ${{ env.GHCR }}:amd64v1-${{ env.mihomo }}
+            ${{ env.GHCR }}:amd64v1
+            ${{ env.HUB }}:amd64v1-${{ env.mihomo }}
+            ${{ env.HUB }}:amd64v1
+
+      # amd64 v2 — SSE4.x (~2009+), отдельный тег
+      - name: Build and push amd64v2
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            AMD64VERSION=v2
+          tags: |
+            ${{ env.GHCR }}:amd64v2-${{ env.mihomo }}
+            ${{ env.GHCR }}:amd64v2
+            ${{ env.HUB }}:amd64v2-${{ env.mihomo }}
+            ${{ env.HUB }}:amd64v2
+
+      # multi-arch — amd64(v3, AVX2) + arm64 + armv7 + armv6 → :latest
+      - name: Build and push multi-arch (latest)
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            AMD64VERSION=v3
+          tags: |
+            ${{ env.GHCR }}:${{ env.mihomo }}
+            ${{ env.GHCR }}:latest
+            ${{ env.HUB }}:${{ env.mihomo }}
+            ${{ env.HUB }}:latest
+
+      - name: Publish container archives to Telegram
+        if: steps.check.outputs.build_needed == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
+          IMAGE_REPO: medium1992/mihomo-ros
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TELEGRAM_BOT_TOKEN}" ] || [ -z "${TELEGRAM_CHAT_ID}" ]; then
+            echo "Telegram secrets are not configured, skipping Telegram publish."
+            exit 0
+          fi
+
+          telegram_api() {
+            local method="$1"
+            shift
+            response=$(curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}" "$@")
+            echo "$response" | grep -q '"ok":true' || {
+              echo "Telegram API call failed:"
+              echo "$response"
+              exit 1
+            }
+          }
+
+          retry() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "Attempt ${attempt} failed, retrying..."
+              sleep 10
+            done
+            "$@"
+          }
+
+          thread_data_args=()
+          thread_form_args=()
+          if [ -n "${TELEGRAM_THREAD_ID}" ]; then
+            thread_data_args=(-d "message_thread_id=${TELEGRAM_THREAD_ID}")
+            thread_form_args=(-F "message_thread_id=${TELEGRAM_THREAD_ID}")
+          fi
+
+          mkdir -p telegram-images
+
+          export_image() {
+            local name="$1"
+            local platform="$2"
+            local image="$3"
+            local file="telegram-images/mihomo-ros-${name}-${mihomo}.tar.gz"
+            retry docker pull --platform "${platform}" "${image}"
+            docker save "${image}" | gzip -9 > "${file}"
+            docker image rm "${image}" || true
+          }
+
+          export_image "amd64-v1" "linux/amd64"  "${IMAGE_REPO}:amd64v1-${mihomo}"
+          export_image "amd64-v2" "linux/amd64"  "${IMAGE_REPO}:amd64v2-${mihomo}"
+          export_image "amd64-v3" "linux/amd64"  "${IMAGE_REPO}:${mihomo}"
+          export_image "arm64"    "linux/arm64"  "${IMAGE_REPO}:${mihomo}"
+          export_image "armv7"    "linux/arm/v7" "${IMAGE_REPO}:${mihomo}"
+          export_image "armv6"    "linux/arm/v6" "${IMAGE_REPO}:${mihomo}"
+
+          sha256sum telegram-images/*.tar.gz > telegram-images/sha256sums.txt
+
+          files_list=$(find telegram-images -maxdepth 1 -name '*.tar.gz' -type f -printf '%f\n' | sort)
+          message=$(printf 'mihomo-ros container images\n\nmihomo: %s\n\nDocker Hub: https://hub.docker.com/r/%s\n\nFiles:\n%s\n\nChecksums: sha256sums.txt' \
+            "${mihomo}" \
+            "${IMAGE_REPO}" \
+            "${files_list}")
+
+          telegram_api sendMessage \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            "${thread_data_args[@]}" \
+            --data-urlencode "text=${message}"
+
+          while IFS= read -r file; do
+            telegram_api sendDocument \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              "${thread_form_args[@]}" \
+              -F "document=@${file}" \
+              -F "caption=$(basename "$file")"
+          done < <(find telegram-images -maxdepth 1 -name '*.tar.gz' -type f | sort)
+
+          telegram_api sendDocument \
+            -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            "${thread_form_args[@]}" \
+            -F "document=@telegram-images/sha256sums.txt" \
+            -F "caption=sha256sums.txt"
+
+      - name: Commit VERSIONS
+        if: steps.check.outputs.build_needed == 'true'
+        run: |
+          echo "mihomo=${{ env.mihomo }}" > VERSIONS
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add VERSIONS
+          git commit -m "Auto-update: mihomo ${{ env.mihomo }}" || exit 0
+          git push
+
+      - name: Install crane
+        if: steps.check.outputs.build_needed == 'true'
+        run: |
+          curl -sL https://github.com/google/go-containerregistry/releases/download/v0.20.2/go-containerregistry_Linux_x86_64.tar.gz | sudo tar -C /usr/local/bin -xz crane
+          chmod +x /usr/local/bin/crane
+          crane version || { echo "Crane failed to install"; exit 1; }
+
+      - name: Log in to GHCR with crane
+        if: steps.check.outputs.build_needed == 'true'
+        run: echo "${GITHUB_TOKEN}" | crane auth login ghcr.io -u ${PACKAGE_OWNER} --password-stdin
+
+      - name: Analyze GHCR packages (dry-run)
+        if: steps.check.outputs.build_needed == 'true'
+        id: analyze
+        run: |
+          set -e
+          echo "Fetching package versions for ${PACKAGE_OWNER}/${PACKAGE_NAME}..."
+          page=1
+          packages_json="[]"
+          last_first_id=""
+          while true; do
+            echo "Fetching page $page..."
+            chunk=$(timeout 30s gh api -H "Accept: application/vnd.github+json" \
+              /users/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions?per_page=100&page=$page || echo "TIMEOUT")
+            if [[ "$chunk" == "TIMEOUT" ]]; then
+              echo "Error: gh api timed out on page $page"
+              exit 1
+            fi
+            chunk_count=$(echo "$chunk" | jq length)
+            echo "Page $page: $chunk_count versions"
+            if [[ "$chunk_count" -eq 0 ]]; then break; fi
+            first_id=$(echo "$chunk" | jq -r '.[0].id // ""')
+            if [[ -n "$last_first_id" && "$first_id" == "$last_first_id" ]]; then
+              echo "Page $page same as previous, stopping"; break
+            fi
+            last_first_id="$first_id"
+            if [[ "$packages_json" == "[]" ]]; then
+              packages_json="$chunk"
+            else
+              packages_json=$(jq -s '.[0] + .[1]' <(echo "$packages_json") <(echo "$chunk"))
+            fi
+            ((page++))
+            if [[ $page -gt 10 ]]; then echo "Max page limit (10)"; break; fi
+          done
+
+          total=$(echo "$packages_json" | jq length)
+          echo "Total versions found: $total"
+
+          declare -A protected_digests
+          declare -A child_digests
+          declare -A manifest_seen
+
+          echo "=== 🏷️ Tagged manifests ==="
+          while IFS=$'\t' read -r id digest tags created mediaType; do
+            [[ -z "$id" ]] && continue
+            protected_digests[$digest]=1
+            echo "  📦 Inspecting manifest $digest (tags: [$tags])"
+            if [[ -z "${manifest_seen[$digest]:-}" ]]; then
+              manifest_seen[$digest]=1
+              manifest_json=$(timeout 10s crane manifest "ghcr.io/${PACKAGE_OWNER}/${PACKAGE_NAME}@${digest}" 2>/dev/null || echo "{}")
+              sub_digests=$(echo "$manifest_json" | jq -r '(.manifests // [])[].digest // empty')
+              for sd in $sub_digests; do
+                [[ -n "$sd" ]] || continue
+                child_digests[$sd]=1
+                protected_digests[$sd]=1
+                echo "    → Protected child digest: $sd"
+              done
+            else
+              echo "    → (manifest already inspected, reusing cache)"
+            fi
+            echo "- ID: $id | Digest: $digest | Tags: [$tags] | Created: $created | Type: ($mediaType)"
+          done < <(echo "$packages_json" | jq -r '
+            .[] | select((.metadata.container.tags // []) | length > 0) |
+            [ .id, .name,
+              ((.metadata.container.tags // []) | join(", ")),
+              .created_at,
+              (.metadata.container.manifest.mediaType // "unknown")
+            ] | @tsv')
+
+          echo "Protected child digests count: ${#child_digests[@]}"
+
+          echo "=== 🧩 Untagged images ==="
+          safe_untagged_ids=()
+          while IFS=$'\t' read -r id digest created mediaType; do
+            [[ -z "$id" ]] && continue
+            if [[ -n "${protected_digests[$digest]:-}" ]]; then
+              echo "- ID: $id | Digest: $digest → 🛡 пропущен (child or referenced)"
+            else
+              echo "- ID: $id | Digest: $digest → 🧹 кандидат на удаление"
+              safe_untagged_ids+=("$id")
+            fi
+          done < <(echo "$packages_json" | jq -r '
+            .[] | select((.metadata.container.tags // []) | length == 0) |
+            [ .id, (.name // "unknown"),
+              (.created_at // "unknown"),
+              (.metadata.container.manifest.mediaType // "unknown")
+            ] | @tsv')
+
+          validated_ids=()
+          for id in "${safe_untagged_ids[@]}"; do
+            if gh api -H "Accept: application/vnd.github+json" \
+              /users/${PACKAGE_OWNER}/packages/container/${PACKAGE_NAME}/versions/$id >/dev/null 2>&1; then
+              validated_ids+=("$id")
+            fi
+          done
+
+          echo "Validated untagged IDs: ${validated_ids[*]:-}"
+          if [ ${#validated_ids[@]} -eq 0 ]; then
+            echo "safe_untagged_ids_comma=" >> $GITHUB_OUTPUT
+          else
+            safe_untagged_ids_comma=$(echo "${validated_ids[*]}" | tr ' ' ',')
+            echo "safe_untagged_ids_comma=$safe_untagged_ids_comma" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Cleanup untagged GHCR versions
+        if: env.DELETE_UNTAGGED == 'true' && steps.analyze.outputs.safe_untagged_ids_comma != ''
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: '${{ env.PACKAGE_NAME }}'
+          package-type: 'container'
+          package-version-ids: '${{ steps.analyze.outputs.safe_untagged_ids_comma }}'
+          token: ${{ env.GITHUB_TOKEN }}

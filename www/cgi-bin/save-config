@@ -1,0 +1,41 @@
+#!/bin/sh
+# POST raw YAML body -> validate, save, and hot-reload mihomo via API.
+# Returns: { "ok": bool, "stage": "validate|apply", "output": "..." }
+. /www/cgi-bin/lib.sh
+
+CAND="$MIHOMO_DIR/.candidate.yaml"
+read_body > "$CAND"
+
+if [ ! -s "$CAND" ]; then
+  send_json "400 Bad Request"
+  printf '{"ok":false,"stage":"validate","output":"empty request body"}'
+  exit 0
+fi
+
+# 1) validate
+OUT="$(mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
+if [ $? -ne 0 ]; then
+  ESC="$(printf '%s' "$OUT" | json_escape)"
+  rm -f "$CAND"
+  send_json "200 OK"
+  printf '{"ok":false,"stage":"validate","output":"%s"}' "$ESC"
+  exit 0
+fi
+
+# 2) commit (keep a one-step backup)
+[ -f "$CONFIG" ] && cp "$CONFIG" "$MIHOMO_DIR/.config.bak"
+mv "$CAND" "$CONFIG"
+
+# 3) hot-reload via RESTful API
+APIOUT="$(api PUT "/configs?force=true" \
+            -H 'Content-Type: application/json' \
+            --data "{\"path\":\"$CONFIG\"}" 2>&1)"
+if [ $? -ne 0 ]; then
+  ESC="$(printf 'saved, but reload failed:\n%s' "$APIOUT" | json_escape)"
+  send_json "200 OK"
+  printf '{"ok":false,"stage":"apply","output":"%s"}' "$ESC"
+  exit 0
+fi
+
+send_json "200 OK"
+printf '{"ok":true,"stage":"apply","output":"config saved and applied"}'

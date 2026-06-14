@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mihomo-ros</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">m</div>
+      <div class="brand-text">
+        <strong>mihomo</strong><span>ros</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item active" data-view="yaml">
+        <span class="ico">{ }</span> YAML конфиг
+      </a>
+      <a class="nav-item" data-view="sh">
+        <span class="ico">&gt;_</span> SH скрипты
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="status" id="status">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">проверка…</span>
+      </div>
+      <div class="ver" id="version">—</div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1 id="viewTitle">config.yaml</h1>
+        <span class="path" id="cfgPath"></span>
+      </div>
+
+      <div class="topbar-actions" id="actionsYaml">
+        <button class="btn ghost" id="reloadBtn" title="Перечитать с диска">↺ Сбросить</button>
+        <button class="btn" id="validateBtn">Проверить</button>
+        <button class="btn primary" id="applyBtn">Применить</button>
+      </div>
+
+      <div class="topbar-actions" id="actionsSh" hidden>
+        <button class="btn ghost"  id="shReloadBtn" title="Перечитать с диска">↺ Сбросить</button>
+        <button class="btn"        id="shCheckBtn"  title="Проверить синтаксис (sh -n)">Проверить</button>
+        <button class="btn"        id="shRunBtn"    title="Запустить сейчас">▶ Запустить</button>
+        <button class="btn"        id="shToggleBtn" title="Включить/выключить">⏻ Вкл/выкл</button>
+        <button class="btn danger" id="shDeleteBtn">🗑 Удалить</button>
+        <button class="btn primary" id="shSaveBtn">Сохранить</button>
+      </div>
+    </header>
+
+    <section class="body-split">
+      <!-- file list — only in SH view -->
+      <aside class="files" id="filesPanel" hidden>
+        <div class="files-head">
+          <span>Скрипты</span>
+          <button class="btn tiny" id="shNewBtn">＋ новый</button>
+        </div>
+        <ul class="files-list" id="filesList"></ul>
+        <div class="files-hint">Папка <code>/etc/mihomo/scripts/</code> · выполняются при старте контейнера</div>
+      </aside>
+
+      <div class="editor-col">
+        <section class="editor-wrap">
+          <div class="editor" id="editor">
+            <div class="gutter" id="gutter"></div>
+            <textarea id="code" spellcheck="false" autocomplete="off"
+                      autocapitalize="off" wrap="off"></textarea>
+          </div>
+        </section>
+
+        <section class="console" id="console">
+          <div class="console-head">
+            <span id="consoleTitle">Консоль</span>
+            <span class="spacer"></span>
+            <span class="hint" id="consoleHint">Ctrl+S — применить · Ctrl+Enter — проверить</span>
+          </div>
+          <pre id="consoleBody" class="console-body muted">Загрузка…</pre>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="/assets/app.js"></script>
+</body>
+</html>

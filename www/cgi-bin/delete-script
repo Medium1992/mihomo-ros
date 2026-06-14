@@ -1,0 +1,13 @@
+#!/bin/sh
+# POST ?name=<file> -> delete the script
+. /www/cgi-bin/lib.sh
+
+path="$(script_path "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad script name"}'; exit 0; }
+
+if [ -f "$path" ]; then
+  rm -f "$path"
+  send_json "200 OK"; printf '{"ok":true,"output":"deleted"}'
+else
+  send_json "404 Not Found"; printf '{"ok":false,"output":"not found"}'
+fi

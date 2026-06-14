@@ -1,0 +1,16 @@
+#!/bin/sh
+# GET runtime status: { "running": bool, "version": "...", "config": "..." }
+. /www/cgi-bin/lib.sh
+
+VER="$(mihomo -v 2>/dev/null | head -n1 | json_escape)"
+
+# probe the API; /version returns {"version":"...","meta":true} when up
+if api GET "/version" >/dev/null 2>&1; then
+  RUNNING=true
+else
+  RUNNING=false
+fi
+
+send_json "200 OK"
+printf '{"running":%s,"version":"%s","config":"%s"}' \
+  "$RUNNING" "$VER" "$(printf '%s' "$CONFIG" | json_escape)"

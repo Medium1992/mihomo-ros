@@ -1,0 +1,26 @@
+#!/bin/sh
+# POST raw YAML body -> validate with `mihomo -t` without applying.
+# Returns: { "ok": bool, "output": "..." }
+. /www/cgi-bin/lib.sh
+
+CAND="$MIHOMO_DIR/.candidate.yaml"
+read_body > "$CAND"
+
+if [ ! -s "$CAND" ]; then
+  send_json "400 Bad Request"
+  printf '{"ok":false,"output":"empty request body"}'
+  exit 0
+fi
+
+# -t tests the config; -d keeps relative provider paths resolving against MIHOMO_DIR
+OUT="$(mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
+RC=$?
+rm -f "$CAND"
+
+ESC="$(printf '%s' "$OUT" | json_escape)"
+send_json "200 OK"
+if [ "$RC" -eq 0 ]; then
+  printf '{"ok":true,"output":"%s"}' "$ESC"
+else
+  printf '{"ok":false,"output":"%s"}' "$ESC"
+fi

@@ -1,0 +1,24 @@
+#!/bin/sh
+# GET -> JSON array of scripts in scripts/:
+# [{ "file":"a.sh", "name":"a.sh", "enabled":true, "size":123 }, ...]
+. /www/cgi-bin/lib.sh
+
+send_json "200 OK"
+printf '['
+first=1
+for f in "$SCRIPTS_DIR"/*.sh "$SCRIPTS_DIR"/*.sh.disabled; do
+  [ -f "$f" ] || continue
+  bn="$(basename "$f")"
+  case "$bn" in
+    *.sh.disabled) enabled=false; disp="${bn%.disabled}" ;;
+    *)             enabled=true;  disp="$bn" ;;
+  esac
+  sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
+  [ "$first" -eq 1 ] || printf ','
+  first=0
+  printf '{"file":"%s","name":"%s","enabled":%s,"size":%s}' \
+    "$(printf '%s' "$bn"   | json_escape)" \
+    "$(printf '%s' "$disp" | json_escape)" \
+    "$enabled" "${sz:-0}"
+done
+printf ']'
