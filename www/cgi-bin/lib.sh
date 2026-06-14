@@ -63,16 +63,36 @@ query_get() {
                 | sed -n "s/^$1=//p" | head -n1)"
 }
 
-# resolve a safe path inside SCRIPTS_DIR from a requested name.
-# basename-only + must end in .sh or .sh.disabled. prints path or returns 1.
-script_path() {
-  name="$(basename "$1")"
-  case "$name" in
-    .* ) return 1 ;;                 # no dotfiles / traversal leftovers
-    *.sh | *.sh.disabled ) ;;
-    * ) return 1 ;;
+# ── file resources (file managers) ───────────────────────────
+# whitelist of resource keys -> directories under MIHOMO_DIR
+res_dir() {
+  case "$1" in
+    scripts)         printf '%s' "$MIHOMO_DIR/scripts" ;;
+    scripts-post)    printf '%s' "$MIHOMO_DIR/scripts-post" ;;
+    proxy-providers) printf '%s' "$MIHOMO_DIR/proxy-providers" ;;
+    provider-rules)  printf '%s' "$MIHOMO_DIR/provider-rules" ;;
+    *) return 1 ;;
   esac
-  printf '%s/%s' "$SCRIPTS_DIR" "$name"
+}
+
+# allowed file extensions per resource kind
+res_ext_ok() {
+  case "$1" in
+    scripts|scripts-post)
+      case "$2" in *.sh | *.sh.disabled) return 0 ;; esac ;;
+    proxy-providers|provider-rules)
+      case "$2" in *.yaml | *.yml | *.list | *.txt | *.mrs) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+# resolve a safe path: dirkey + basename + ext check. prints path or returns 1.
+res_path() {
+  d="$(res_dir "$1")" || return 1
+  name="$(basename "$2")"
+  case "$name" in .* ) return 1 ;; esac   # no dotfiles / traversal leftovers
+  res_ext_ok "$1" "$name" || return 1
+  printf '%s/%s' "$d" "$name"
 }
 
 # curl wrapper for the mihomo RESTful API, adds bearer secret if set

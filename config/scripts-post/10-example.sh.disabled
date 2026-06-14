@@ -1,0 +1,12 @@
+#!/bin/sh
+# POST-хук. Любой *.sh в /etc/mihomo/scripts-post/ выполняется entrypoint ПОСЛЕ
+# старта ядра mihomo (когда процесс уже поднялся). Переименуй в "10-example.sh".
+#
+# Доступные переменные: MIHOMO_DIR, CONFIG, SCRIPTS_DIR, SCRIPTS_POST_DIR
+#
+# Примеры применения (когда ядро уже работает):
+#   - добавить маршруты/правила фаервола на интерфейс прокси
+#   - дёрнуть RESTful API ядра (порт из external-controller в config.yaml)
+#   - уведомить во внешний сервис, что узел поднялся
+
+echo "[post] example hook ran after mihomo start"

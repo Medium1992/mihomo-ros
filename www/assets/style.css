@@ -18,13 +18,16 @@
   --ui:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 *{box-sizing:border-box}
+/* class rules like .topbar-actions{display:flex} otherwise override the
+   `hidden` attribute (UA display:none) — force it to win */
+[hidden]{display:none!important}
 html,body{height:100%}
 body{
   margin:0;font-family:var(--ui);color:var(--text);
   background:radial-gradient(1200px 600px at 80% -10%,#1a2138 0%,var(--bg) 55%);
   -webkit-font-smoothing:antialiased;
 }
-.app{display:grid;grid-template-columns:248px 1fr;height:100vh}
+.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
 
 /* ── sidebar ─────────────────────────────────────────────── */
 .sidebar{
@@ -77,7 +80,7 @@ body{
 .ver{font-family:var(--mono);font-size:11px;color:var(--muted-2)}
 
 /* ── main ────────────────────────────────────────────────── */
-.main{display:flex;flex-direction:column;min-width:0;padding:18px 22px 20px;gap:14px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;padding:18px 22px 20px;gap:14px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .topbar-title h1{margin:0;font-size:19px;font-weight:600}
 .topbar-title .path{font-family:var(--mono);font-size:11.5px;color:var(--muted-2)}
@@ -103,8 +106,8 @@ body{
 .btn.tiny{padding:5px 10px;font-size:12px;border-radius:8px}
 
 /* ── body split: file list + editor column ───────────────── */
-.body-split{flex:1;min-height:0;display:flex;gap:14px}
-.editor-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+.body-split{flex:1;min-height:0;display:flex;gap:14px;overflow:hidden}
+.editor-col{flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:14px}
 
 .files{
   flex:0 0 230px;display:flex;flex-direction:column;
@@ -118,6 +121,8 @@ body{
 }
 .files-list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
 .files-empty{padding:14px 12px;color:var(--muted-2);font-size:12.5px}
+.files-sep{height:1px;background:var(--border-soft);margin:6px 8px}
+.file-item.sec-whole .file-name{font-weight:600;color:var(--text)}
 .file-item{
   display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;
   cursor:pointer;font-family:var(--mono);font-size:12.5px;color:var(--muted);
@@ -131,9 +136,27 @@ body{
 .file-item.off .file-name{text-decoration:line-through;opacity:.7}
 .file-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file-tag{font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.5px}
+/* пустой раздел конфига (ключ отсутствует) — приглушён, точка серая */
+.file-item.absent{opacity:.55}
+.file-item.absent .file-dot{background:var(--muted-2);box-shadow:none}
+.file-item.absent .file-tag{color:var(--muted-2)}
 .files-hint{padding:10px 13px;border-top:1px solid var(--border-soft);
   font-size:11px;color:var(--muted-2);line-height:1.4}
 .files-hint code{font-family:var(--mono);color:var(--muted)}
+
+/* ── section doc bar ─────────────────────────────────────── */
+.sec-doc{
+  flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  background:var(--panel);border:1px solid var(--border);border-radius:12px;
+  padding:10px 14px;
+}
+.sec-doc-note{flex:1;font-size:12.5px;color:var(--muted);line-height:1.4}
+.sec-doc-link{
+  flex:0 0 auto;font-size:12.5px;color:var(--accent);text-decoration:none;
+  white-space:nowrap;padding:5px 10px;border-radius:8px;
+  border:1px solid rgba(109,124,255,.3);transition:.15s;
+}
+.sec-doc-link:hover{background:rgba(109,124,255,.12);border-color:var(--accent)}
 
 /* ── editor ──────────────────────────────────────────────── */
 .editor-wrap{flex:1;min-height:0}
@@ -176,6 +199,31 @@ body{
 .console-body.muted{color:var(--muted)}
 .console-body.ok{color:var(--green)}
 .console-body.err{color:var(--red)}
+
+/* ── tools pane ──────────────────────────────────────────── */
+.tools-pane{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.tool-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  padding:20px 22px;max-width:680px;
+  box-shadow:0 20px 50px -30px #000;
+}
+.tool-card h3{margin:0 0 8px;font-size:16px;font-weight:600}
+.tool-card p{margin:0 0 14px;font-size:13px;line-height:1.5;color:var(--muted)}
+.tool-card code{font-family:var(--mono);font-size:12px;color:var(--text);
+  background:var(--bg-2);padding:1px 5px;border-radius:5px}
+.tool-card label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}
+.tool-card input{
+  width:100%;appearance:none;border:1px solid var(--border);background:var(--bg-2);
+  color:var(--text);font-family:var(--mono);font-size:13px;
+  padding:10px 12px;border-radius:10px;outline:0;margin:0 0 14px;
+}
+.tool-card input:focus{border-color:var(--accent)}
+.tool-card input[readonly]{color:var(--green);margin:0}
+.tool-card .btn{margin:0 0 16px}
+.tool-out{display:flex;gap:9px;align-items:stretch;margin:0 0 14px}
+.tool-out input{flex:1;margin:0}
+.tool-out .btn{margin:0;flex:0 0 auto}
+.tool-note{margin:0!important;font-size:12px;color:var(--muted-2)}
 
 /* ── toast ───────────────────────────────────────────────── */
 .toast{

@@ -1,10 +1,13 @@
 #!/bin/sh
 # POST raw YAML body -> validate with `mihomo -t` without applying.
+# Candidate lives in tmpfs (/dev/shm) — никаких записей на флеш при проверке.
 # Returns: { "ok": bool, "output": "..." }
 . /www/cgi-bin/lib.sh
 
-CAND="$MIHOMO_DIR/.candidate.yaml"
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+CAND="$TMPDIR_/.cfg-check.$$"
 read_body > "$CAND"
+trap 'rm -f "$CAND"' EXIT
 
 if [ ! -s "$CAND" ]; then
   send_json "400 Bad Request"
@@ -13,9 +16,8 @@ if [ ! -s "$CAND" ]; then
 fi
 
 # -t tests the config; -d keeps relative provider paths resolving against MIHOMO_DIR
-OUT="$(mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
+OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
 RC=$?
-rm -f "$CAND"
 
 ESC="$(printf '%s' "$OUT" | json_escape)"
 send_json "200 OK"
