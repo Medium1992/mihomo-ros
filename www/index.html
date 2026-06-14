@@ -48,9 +48,10 @@
       </div>
 
       <div class="topbar-actions" id="actionsYaml">
-        <button class="btn ghost" id="reloadBtn" title="Перечитать с диска">↺ Сбросить</button>
-        <button class="btn" id="validateBtn">Проверить</button>
-        <button class="btn primary" id="applyBtn">Применить</button>
+        <button class="btn ghost" id="reloadBtn" title="Перечитать config.yaml с диска, отменив несохранённые правки">↺ Сбросить</button>
+        <button class="btn" id="validateBtn" title="Проверить конфиг через mihomo -t, ничего не сохраняя (Ctrl+Enter)">Проверить</button>
+        <button class="btn primary" id="applyBtn" title="Мягко применить: горячее обновление proxies, групп, правил и DNS без пересоздания портов/листенеров — соединения не рвутся (Ctrl+S)">Применить</button>
+        <button class="btn" id="applyFullBtn" title="Полностью применить: перезагрузка с пересозданием портов, листенеров и TUN. Нужно при смене mixed-port / allow-lan / bind-address / tun / listeners. Рвёт текущие соединения.">Полностью применить</button>
       </div>
 
       <div class="topbar-actions" id="actionsScript" hidden>
@@ -87,6 +88,11 @@
           <a class="sec-doc-link" id="secDocLink" target="_blank" rel="noopener">📖 Документация mihomo ↗</a>
         </div>
 
+        <div class="sec-doc" id="resPath" hidden>
+          <span class="sec-doc-note">Путь для конфига: <code id="resPathText"></code></span>
+          <button class="btn tiny" id="resPathCopy">Копировать путь</button>
+        </div>
+
         <section class="editor-wrap" id="editorWrap">
           <div class="editor" id="editor">
             <div class="gutter" id="gutter"></div>
@@ -106,7 +112,8 @@
 
         <!-- Инструменты (вместо редактора) -->
         <section class="tools-pane" id="toolsPane" hidden>
-          <div class="tool-card">
+
+          <div class="tool-card" id="toolHash">
             <h3>Хеш пароля для basic auth</h3>
             <p>Введите пароль — получите md5-хеш <code>$1$…</code> для переменной
                окружения <code>BASIC_AUTH_HASH</code> контейнера.</p>
@@ -121,6 +128,49 @@
             <p class="tool-note">Логин задаётся в <code>BASIC_AUTH_USER</code> (по умолчанию
                <code>admin</code>). По умолчанию пароль — <code>admin</code>.</p>
           </div>
+
+          <div class="tool-card" id="toolAwg" hidden>
+            <h3>AWG / WireGuard <code>.conf</code> → YAML</h3>
+            <p>Вставьте содержимое <code>.conf</code> (AmneziaWG или обычный WireGuard) —
+               получите блок прокси <code>type: wireguard</code> для секции <code>proxies</code>.</p>
+            <label for="awgIn">Исходный <code>.conf</code></label>
+            <textarea id="awgIn" class="tool-area" spellcheck="false" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.8.0.2/32&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = host:51820&#10;AllowedIPs = 0.0.0.0/0, ::/0"></textarea>
+            <button class="btn primary" id="awgGen">Конвертировать</button>
+            <label for="awgOut">YAML (вставьте в <code>proxies</code>)</label>
+            <div class="tool-out-block">
+              <textarea id="awgOut" class="tool-area" readonly placeholder="результат…"></textarea>
+              <button class="btn" id="awgCopy">Копировать</button>
+            </div>
+          </div>
+
+          <div class="tool-card" id="toolToml" hidden>
+            <h3>TrustTunnel <code>.toml</code> → YAML</h3>
+            <p>Вставьте TrustTunnel-конфиг <code>.toml</code> — получите блок прокси
+               <code>type: trusttunnel</code> для секции <code>proxies</code>.</p>
+            <label for="tomlIn">Исходный <code>.toml</code></label>
+            <textarea id="tomlIn" class="tool-area" spellcheck="false" placeholder='hostname = "vpn.example.com"&#10;addresses = ["1.2.3.4:8443"]&#10;username = "user"&#10;password = "pass"&#10;skip_verification = true&#10;upstream_protocol = "http3"'></textarea>
+            <button class="btn primary" id="tomlGen">Конвертировать</button>
+            <label for="tomlOut">YAML (вставьте в <code>proxies</code>)</label>
+            <div class="tool-out-block">
+              <textarea id="tomlOut" class="tool-area" readonly placeholder="результат…"></textarea>
+              <button class="btn" id="tomlCopy">Копировать</button>
+            </div>
+          </div>
+
+          <div class="tool-card" id="toolOpenvpn" hidden>
+            <h3>OpenVPN <code>.ovpn</code> → YAML</h3>
+            <p>Вставьте OpenVPN-конфиг (со встроенными блоками <code>&lt;ca&gt;</code>/<code>&lt;cert&gt;</code>/<code>&lt;key&gt;</code>
+               или <code>auth-user-pass</code>) — получите блок прокси <code>type: openvpn</code>.</p>
+            <label for="ovpnIn">Исходный <code>.ovpn</code></label>
+            <textarea id="ovpnIn" class="tool-area" spellcheck="false" placeholder="client&#10;dev tun&#10;proto udp&#10;remote 1.2.3.4 1194&#10;&lt;ca&gt;&#10;-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----&#10;&lt;/ca&gt;"></textarea>
+            <button class="btn primary" id="ovpnGen">Конвертировать</button>
+            <label for="ovpnOut">YAML (вставьте в <code>proxies</code>)</label>
+            <div class="tool-out-block">
+              <textarea id="ovpnOut" class="tool-area" readonly placeholder="результат…"></textarea>
+              <button class="btn" id="ovpnCopy">Копировать</button>
+            </div>
+          </div>
+
         </section>
       </div>
     </section>

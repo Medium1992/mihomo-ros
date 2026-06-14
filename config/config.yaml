@@ -1,56 +1,81 @@
-mixed-port: 7890
-allow-lan: true
-bind-address: '*'
-mode: rule
 log-level: info
-ipv6: false
-unified-delay: true
-tcp-concurrent: true
-find-process-mode: 'off'
 external-controller: 0.0.0.0:9090
 secret: ""
+external-ui: ui
+external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+unified-delay: true
+ipv6: false
+geodata-mode: true
+find-process-mode: 'off'
 
 profile:
   store-selected: true
-  store-fake-ip: true
 
 sniffer:
   enable: true
   override-destination: false
   sniff:
-    HTTP:
-      ports: [80, 8080-8880]
-      override-destination: true
-    TLS:
-      ports: [443, 8443]
     QUIC:
       ports: [443, 8443]
-  skip-domain:
-    - "Mijia Cloud"
-    - "+.push.apple.com"
+    TLS:
+      ports: [443, 8443]
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: false
 
 dns:
   enable: true
+  cache-algorithm: arc
+  prefer-h3: false
+  use-system-hosts: false
+  respect-rules: true
+  listen: 0.0.0.0:53
   ipv6: false
-  listen: 0.0.0.0:1053
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   fake-ip-filter:
     - "*.lan"
     - "+.local"
+    - "geosite:private"
     - "+.market.xiaomi.com"
   default-nameserver:
-    - 1.1.1.1
     - 8.8.8.8
+    - 9.9.9.9
+    - 1.1.1.1
   nameserver:
-    - https://1.1.1.1/dns-query
-    - https://8.8.8.8/dns-query
+    - https://dns.google/dns-query#disable-qtype-65=true&disable-ipv6=true
+    - https://cloudflare-dns.com/dns-query#disable-qtype-65=true&disable-ipv6=true
+    - https://dns.quad9.net/dns-query#disable-qtype-65=true&disable-ipv6=true
   proxy-server-nameserver:
-    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query#disable-qtype-65=true&disable-ipv6=true
+    - https://cloudflare-dns.com/dns-query#disable-qtype-65=true&disable-ipv6=true
 
-proxies: []
+hosts:
+  dns.google: [8.8.8.8, 8.8.4.4]
+  dns.quad9.net: [9.9.9.9, 149.112.112.112]
+  cloudflare-dns.com: [104.16.248.249, 104.16.249.249]
 
-proxy-providers: {}
+listeners:
+  - name: redir-in
+    type: redir
+    port: 12345
+    listen: 0.0.0.0
+  - name: tproxy-in
+    type: tproxy
+    port: 12346
+    listen: 0.0.0.0
+    udp: true
+  - name: tun-in
+    type: tun
+    device: Meta
+    inet4-address:
+      - 100.64.0.1/32
+    udp-timeout: 30
+    mtu: 1500
+
+proxies:
+
+proxy-providers:
 
 proxy-groups:
   - name: PROXY
@@ -58,7 +83,7 @@ proxy-groups:
     proxies:
       - DIRECT
 
-rule-providers: {}
+rule-providers:
 
 rules:
   - GEOIP,private,DIRECT,no-resolve

@@ -31,8 +31,14 @@ NEW="$MIHOMO_DIR/.config.new"
 cp "$CAND" "$NEW" && mv -f "$NEW" "$CONFIG"
 
 # 3) hot-reload via RESTful API (API_SECRET прочитан при source — секрет
-#    ещё работающего ядра, поэтому 401 не будет даже при смене secret)
-APIOUT="$(api PUT "/configs?force=true" \
+#    ещё работающего ядра, поэтому 401 не будет даже при смене secret).
+#    force выбирается вебкой (?force=true|false):
+#      false — МЯГКО: обновляет proxies/groups/rules/dns, входящие
+#              листенеры/порты/TUN НЕ пересоздаются (сокеты клиентов живут);
+#      true  — ПОЛНОСТЬЮ: пересоздаёт и листенеры/порты/TUN (нужно при смене
+#              mixed-port/allow-lan/bind-address/tun/listeners), рвёт соединения.
+FORCE="$(query_get force)"; [ "$FORCE" = "true" ] || FORCE="false"
+APIOUT="$(api PUT "/configs?force=$FORCE" \
             -H 'Content-Type: application/json' \
             --data "{\"path\":\"$CONFIG\"}" 2>&1)"
 if [ $? -ne 0 ]; then
