@@ -117,12 +117,52 @@
   const syncScroll = () => { gutter.scrollTop = code.scrollTop; };
 
   code.addEventListener("keydown", (e) => {
-    if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "  "); }
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.key === "Tab") {
+      e.preventDefault();
+      if (e.shiftKey) outdentLines();
+      else if (multiLineSel()) indentLines();
+      else document.execCommand("insertText", false, "  ");
+    } else if (ctrl && e.key === "/") { e.preventDefault(); toggleComment(); }
+    else if (ctrl && e.key === "]") { e.preventDefault(); indentLines(); }
+    else if (ctrl && e.key === "[") { e.preventDefault(); outdentLines(); }
   });
+  /* ── редактор: отступы и комментирование ────────────────── */
+  const multiLineSel = () =>
+    code.value.slice(code.selectionStart, code.selectionEnd).indexOf("\n") >= 0;
+  function selLineRange() {
+    const v = code.value, s = code.selectionStart;
+    let e = code.selectionEnd;
+    if (e > s && v[e - 1] === "\n") e--;                 // выделение до начала строки — её не берём
+    const ls = v.lastIndexOf("\n", s - 1) + 1;
+    let le = v.indexOf("\n", e); if (le === -1) le = v.length;
+    return { ls, le };
+  }
+  function editLines(fn) {
+    const v = code.value;
+    const { ls, le } = selLineRange();
+    const out = fn(v.slice(ls, le).split("\n")).join("\n");
+    code.setSelectionRange(ls, le);
+    document.execCommand("insertText", false, out);      // сохраняет undo и шлёт input
+    code.setSelectionRange(ls, ls + out.length);
+  }
+  const indentLines = () => editLines((ls) => ls.map((l) => (l === "" ? l : "  " + l)));
+  const outdentLines = () => editLines((ls) => ls.map((l) => l.replace(/^( {1,2}|\t)/, "")));
+  function toggleComment() {
+    editLines((ls) => {
+      const ne = ls.filter((l) => l.trim() !== "");
+      const allCom = ne.length > 0 && ne.every((l) => /^\s*#/.test(l));
+      return allCom
+        ? ls.map((l) => l.replace(/^(\s*)#\s?/, "$1"))
+        : ls.map((l) => (l.trim() === "" ? l : l.replace(/^(\s*)/, "$1# ")));
+    });
+  }
   code.addEventListener("input", () => {
     dirty = true; renderGutter();
     if (view === "yaml") {
-      cfgFull = (cfgSel === null) ? code.value : spliceSection(code.value);
+      if (cfgSel === null) cfgFull = code.value;
+      else if (cfgSel === "general") cfgFull = rebuildFromGeneral(code.value);
+      else cfgFull = spliceSection(code.value);
     }
   });
   code.addEventListener("scroll", syncScroll);
@@ -178,14 +218,16 @@
       cfgFull = (await r.text()).replace(/[ \t\r\n]+$/, "") + "\n";
       dirty = false;
       buildSectionList();
-      if (cfgSel !== null && sectionRange(cfgSel)) selectSection(cfgSel);
+      if (cfgSel !== null && sectionPresent(cfgSel)) selectSection(cfgSel);
       else selectWhole();
       setConsole("Консоль", "Конфиг загружен. Слева — разделы одного файла.", "muted");
     } catch (e) { setConsole("Ошибка", "Не удалось загрузить конфиг: " + e, "err"); }
   }
 
-  // top-level keys (col 0) with их блоками; ведущие комментарии/пустые строки
-  // прикрепляются к следующему ключу
+  // top-level ключи (колонка 0) с их блоками. Ведущие пустые строки и
+  // комментарии В КОЛОНКЕ 0 прикрепляются к следующему ключу. Отступленные
+  // строки (в т.ч. закомментированные `  # …`) — это содержимое предыдущего
+  // блока и остаются с ним.
   function topEntries(text) {
     const lines = text.split("\n");
     const off = []; let o = 0;
@@ -195,24 +237,34 @@
       const m = lines[i].match(/^([A-Za-z0-9_-]+):/);
       if (!m) continue;
       let s = i;
-      while (s - 1 >= 0 && (lines[s - 1].trim() === "" || lines[s - 1].trim().charAt(0) === "#")) s--;
+      while (s - 1 >= 0 && (lines[s - 1].trim() === "" || lines[s - 1].charAt(0) === "#")) s--;
       entries.push({ key: m[1], start: off[s] });
     }
     for (let j = 0; j < entries.length; j++)
       entries[j].end = (j + 1 < entries.length) ? entries[j + 1].start : text.length;
     return entries;
   }
-  // {start,end} среза секции в cfgFull или null если раздела нет
-  function sectionRange(id) {
-    const entries = topEntries(cfgFull);
-    if (!entries.length) return null;
-    if (id === "general") {
-      const fb = entries.findIndex((e) => BLOCK_KEYS.includes(e.key));
-      if (fb === 0) return null;
-      return { start: 0, end: fb < 0 ? cfgFull.length : entries[fb].start };
-    }
-    const e = entries.find((x) => x.key === id);
+  const sliceTrim = (e) => cfgFull.slice(e.start, e.end).replace(/^\n+/, "").replace(/\n+$/, "");
+  // {start,end} блок-секции (один top-level ключ) или null, если отсутствует
+  function blockRange(id) {
+    const e = topEntries(cfgFull).find((x) => x.key === id);
     return e ? { start: e.start, end: e.end } : null;
+  }
+  // «Общее» = ВСЕ top-level ключи, не относящиеся к другим вкладкам
+  // (даже разбросанные по файлу), их тексты собираются вместе.
+  const generalEntries = () => topEntries(cfgFull).filter((e) => !BLOCK_KEYS.includes(e.key));
+  const generalText = () => generalEntries().map(sliceTrim).filter(Boolean).join("\n");
+  const sectionPresent = (id) =>
+    id === "general" ? generalEntries().length > 0 : blockRange(id) !== null;
+  // пересобрать мастер-текст из отредактированного «Общего»: общие скаляры
+  // сверху, затем блок-секции в прежнем порядке, по одной пустой строке между.
+  function rebuildFromGeneral(body) {
+    const blocks = topEntries(cfgFull).filter((e) => BLOCK_KEYS.includes(e.key)).map(sliceTrim);
+    const parts = [];
+    const g = body.replace(/^\n+/, "").replace(/\n+$/, "");
+    if (g) parts.push(g);
+    blocks.forEach((b) => { if (b) parts.push(b); });
+    return parts.join("\n\n") + "\n";
   }
 
   function buildSectionList() {
@@ -225,7 +277,7 @@
     ul.appendChild(whole);
     const sep = document.createElement("li"); sep.className = "files-sep"; ul.appendChild(sep);
     SECTIONS.forEach((s) => {
-      const present = sectionRange(s.id) !== null;
+      const present = sectionPresent(s.id);
       const li = document.createElement("li");
       li.className = "file-item" + (present ? "" : " absent") + (cfgSel === s.id ? " sel" : "");
       li.dataset.sec = s.id;
@@ -261,22 +313,30 @@
     renderSecDoc(null);
     markYamlSel();
   }
+  const placeholderFor = (id) => "# раздел «" + secLabel(id) + "» пуст\n"
+    + "# чтобы заполнить, начните со строки:\n" + secSample(id);
   function selectSection(id) {
     cfgSel = id;
-    const r = sectionRange(id);
-    if (r) {
-      secBefore = cfgFull.slice(0, r.start);
-      secAfter = cfgFull.slice(r.end);
-      code.placeholder = "";
-      // ведущую пустую строку-разделитель не показываем (она в модели, не в виде)
-      code.value = cfgFull.slice(r.start, r.end).replace(/^\n+/, "");
+    code.placeholder = "";
+    if (id === "general") {
+      // «Общее» собирается из всех не-блочных ключей; склейка — rebuildFromGeneral
+      const t = generalText();
+      code.value = t;
+      if (!t) code.placeholder = placeholderFor(id);
     } else {
-      // раздела нет: пусто, ввод допишется в конец общего конфига
-      secBefore = cfgFull.endsWith("\n") ? cfgFull : cfgFull + "\n";
-      secAfter = "";
-      code.value = "";
-      code.placeholder = "# раздел «" + secLabel(id) + "» пуст\n"
-        + "# чтобы заполнить, начните со строки:\n" + secSample(id);
+      const r = blockRange(id);
+      if (r) {
+        secBefore = cfgFull.slice(0, r.start);
+        secAfter = cfgFull.slice(r.end);
+        // ведущую пустую строку-разделитель не показываем (она в модели, не в виде)
+        code.value = cfgFull.slice(r.start, r.end).replace(/^\n+/, "");
+      } else {
+        // раздела нет: пусто, ввод допишется в конец общего конфига
+        secBefore = cfgFull.endsWith("\n") ? cfgFull : cfgFull + "\n";
+        secAfter = "";
+        code.value = "";
+        code.placeholder = placeholderFor(id);
+      }
     }
     renderGutter();
     $("cfgPath").textContent = "config.yaml › " + secLabel(id);
@@ -469,9 +529,8 @@
     $("viewTitle").textContent = title;
     $("filesTitle").textContent = title;
     $("filesHint").innerHTML = yaml ? "разделы одного файла" : tools ? "" : RES[v].hint;
-    $("consoleHint").textContent = yaml
-      ? "Ctrl+S — применить · Ctrl+Enter — проверить"
-      : "Ctrl+S — сохранить · Ctrl+Enter — проверить";
+    $("consoleHint").textContent = (yaml ? "Ctrl+S применить · Ctrl+Enter проверить" : "Ctrl+S сохранить · Ctrl+Enter проверить")
+      + " · Ctrl+/ коммент · Ctrl+]/[ отступ";
   }
   function switchView(v) {
     if (v === view) return;
@@ -486,7 +545,7 @@
       if (s) {
         cfgFull = s.full; cfgSel = s.sel; dirty = s.dirty;
         buildSectionList();
-        (cfgSel !== null && sectionRange(cfgSel)) ? selectSection(cfgSel) : selectWhole();
+        (cfgSel !== null && sectionPresent(cfgSel)) ? selectSection(cfgSel) : selectWhole();
         refreshStatus();
       } else { cfgSel = null; loadConfig(); refreshStatus(); }
     } else if (tools) {
