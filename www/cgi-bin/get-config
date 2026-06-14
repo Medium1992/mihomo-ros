@@ -1,0 +1,11 @@
+#!/bin/sh
+# GET current config.yaml as plain text
+. /www/cgi-bin/lib.sh
+
+if [ -f "$CONFIG" ]; then
+  send_text "200 OK"
+  cat "$CONFIG"
+else
+  send_text "404 Not Found"
+  echo "# config.yaml not found at $CONFIG"
+fi

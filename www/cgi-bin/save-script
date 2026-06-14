@@ -1,0 +1,13 @@
+#!/bin/sh
+# POST ?name=<file>  body=script content -> create/overwrite, keep +x
+. /www/cgi-bin/lib.sh
+
+path="$(script_path "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad script name"}'; exit 0; }
+
+mkdir -p "$SCRIPTS_DIR"
+read_body > "$path"
+chmod +x "$path" 2>/dev/null || true
+
+send_json "200 OK"
+printf '{"ok":true,"output":"saved %s"}' "$(basename "$path" | json_escape)"
