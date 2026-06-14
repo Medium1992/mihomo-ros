@@ -1,0 +1,17 @@
+#!/bin/sh
+# POST raw password body -> md5crypt hash ($1$...) for BASIC_AUTH_HASH.
+# Returns: { "ok": bool, "hash": "..." }
+. /www/cgi-bin/lib.sh
+
+PWD_IN="$(read_body)"
+if [ -z "$PWD_IN" ]; then
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"empty password"}'; exit 0
+fi
+
+HASH="$(printf '%s' "$PWD_IN" | openssl passwd -1 -stdin 2>/dev/null)"
+if [ -z "$HASH" ]; then
+  send_json "500 Internal Server Error"; printf '{"ok":false,"output":"openssl failed"}'; exit 0
+fi
+
+send_json "200 OK"
+printf '{"ok":true,"hash":"%s"}' "$(printf '%s' "$HASH" | json_escape)"

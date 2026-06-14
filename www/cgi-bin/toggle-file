@@ -1,0 +1,23 @@
+#!/bin/sh
+# POST ?dir=<key>&name=<file> -> enable/disable by toggling .disabled suffix.
+# Only meaningful for scripts (entrypoint skips *.sh.disabled).
+. /www/cgi-bin/lib.sh
+
+dir="$(query_get dir)"
+case "$dir" in
+  scripts|scripts-post) ;;
+  *) send_json "400 Bad Request"; printf '{"ok":false,"output":"toggle only for scripts"}'; exit 0 ;;
+esac
+
+path="$(res_path "$dir" "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad request"}'; exit 0; }
+[ -f "$path" ] || { send_json "404 Not Found"; printf '{"ok":false,"output":"not found"}'; exit 0; }
+
+case "$path" in
+  *.sh.disabled) new="${path%.disabled}"; enabled=true  ;;
+  *.sh)          new="${path}.disabled";  enabled=false ;;
+esac
+
+mv -f "$path" "$new"
+send_json "200 OK"
+printf '{"ok":true,"enabled":%s,"file":"%s"}' "$enabled" "$(basename "$new" | json_escape)"

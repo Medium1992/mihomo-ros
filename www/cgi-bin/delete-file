@@ -1,9 +1,9 @@
 #!/bin/sh
-# POST ?name=<file> -> delete the script
+# POST ?dir=<key>&name=<file> -> delete
 . /www/cgi-bin/lib.sh
 
-path="$(script_path "$(query_get name)")" || {
-  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad script name"}'; exit 0; }
+path="$(res_path "$(query_get dir)" "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad request"}'; exit 0; }
 
 if [ -f "$path" ]; then
   rm -f "$path"

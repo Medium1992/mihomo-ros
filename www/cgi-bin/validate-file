@@ -1,0 +1,54 @@
+#!/bin/sh
+# POST ?dir=<key>&name=<file>  body=content -> validate without saving.
+#   scripts/scripts-post : `sh -n` (syntax)
+#   proxy-providers      : файл сам = мини-конфиг (proxies:), `mihomo -t -f` строго
+#   provider-rules       : `convert-ruleset domain <fmt>` (ловит битый YAML/text;
+#                          лоялен к domain/classical/ipcidr; classical в
+#                          convert-ruleset паникует, поэтому всегда domain); .mrs = skip
+# Returns: { "ok": bool, "output": "..." }
+. /www/cgi-bin/lib.sh
+
+dir="$(query_get dir)"
+name="$(query_get name)"
+res_dir "$dir" >/dev/null || { send_json "400 Bad Request"; printf '{"ok":false,"output":"bad dir"}'; exit 0; }
+
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+CAND="$TMPDIR_/.cand.$$"
+OUTMRS="$TMPDIR_/.out.$$.mrs"
+read_body > "$CAND"
+trap 'rm -f "$CAND" "$OUTMRS"' EXIT
+
+if [ ! -s "$CAND" ]; then
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"empty content"}'; exit 0
+fi
+
+emit() {  # $1 rc, $2 raw output
+  ESC="$(printf '%s' "$2" | json_escape)"
+  send_json "200 OK"
+  if [ "$1" -eq 0 ]; then printf '{"ok":true,"output":"%s"}'  "${ESC:-OK ✓}"
+  else                    printf '{"ok":false,"output":"%s"}' "$ESC"; fi
+}
+
+case "$dir" in
+  scripts|scripts-post)
+    OUT="$(sh -n "$CAND" 2>&1)"; emit "$?" "${OUT:-Синтаксис OK ✓}" ;;
+
+  proxy-providers)
+    OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"; emit "$?" "$OUT" ;;
+
+  provider-rules)
+    case "$name" in
+      *.mrs) emit 0 "Бинарный .mrs — синтаксис не проверяется"; exit 0 ;;
+      *.list|*.txt) fmt=text ;;
+      *) fmt=yaml ;;
+    esac
+    OUT="$(mihomo convert-ruleset domain "$fmt" "$CAND" "$OUTMRS" 2>&1)"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      OUT="Разбор набора OK (format: $fmt) ✓"
+    else
+      # convert-ruleset на битом файле сыплет Go-паникой — оставляем суть
+      OUT="Ошибка разбора набора: $(printf '%s' "$OUT" | grep -m1 -iE 'panic|error|invalid|unmarshal' | sed 's/^panic: //')"
+    fi
+    emit "$rc" "$OUT" ;;
+esac

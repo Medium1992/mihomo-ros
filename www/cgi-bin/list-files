@@ -1,17 +1,21 @@
 #!/bin/sh
-# GET -> JSON array of scripts in scripts/:
+# GET ?dir=<key> -> JSON array of files in that resource dir:
 # [{ "file":"a.sh", "name":"a.sh", "enabled":true, "size":123 }, ...]
 . /www/cgi-bin/lib.sh
+
+dir="$(query_get dir)"
+d="$(res_dir "$dir")" || { send_json "400 Bad Request"; printf '[]'; exit 0; }
 
 send_json "200 OK"
 printf '['
 first=1
-for f in "$SCRIPTS_DIR"/*.sh "$SCRIPTS_DIR"/*.sh.disabled; do
+for f in "$d"/*; do
   [ -f "$f" ] || continue
   bn="$(basename "$f")"
+  res_ext_ok "$dir" "$bn" || continue
   case "$bn" in
-    *.sh.disabled) enabled=false; disp="${bn%.disabled}" ;;
-    *)             enabled=true;  disp="$bn" ;;
+    *.disabled) enabled=false; disp="${bn%.disabled}" ;;
+    *)          enabled=true;  disp="$bn" ;;
   esac
   sz="$(wc -c < "$f" 2>/dev/null | tr -d ' ')"
   [ "$first" -eq 1 ] || printf ','

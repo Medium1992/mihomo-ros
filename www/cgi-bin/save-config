@@ -1,10 +1,14 @@
 #!/bin/sh
-# POST raw YAML body -> validate, save, and hot-reload mihomo via API.
+# POST raw YAML body -> validate (in tmpfs), save, hot-reload mihomo via API.
+# Проверка идёт в /dev/shm (без износа флеша); на флеш пишется только итоговый
+# config.yaml — атомарно (temp в той же ФС + rename).
 # Returns: { "ok": bool, "stage": "validate|apply", "output": "..." }
 . /www/cgi-bin/lib.sh
 
-CAND="$MIHOMO_DIR/.candidate.yaml"
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+CAND="$TMPDIR_/.cfg-save.$$"
 read_body > "$CAND"
+trap 'rm -f "$CAND"' EXIT
 
 if [ ! -s "$CAND" ]; then
   send_json "400 Bad Request"
@@ -12,21 +16,22 @@ if [ ! -s "$CAND" ]; then
   exit 0
 fi
 
-# 1) validate
-OUT="$(mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
+# 1) validate (tmpfs candidate)
+OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
 if [ $? -ne 0 ]; then
   ESC="$(printf '%s' "$OUT" | json_escape)"
-  rm -f "$CAND"
   send_json "200 OK"
   printf '{"ok":false,"stage":"validate","output":"%s"}' "$ESC"
   exit 0
 fi
 
-# 2) commit (keep a one-step backup)
+# 2) commit: backup + atomic replace on the same filesystem
 [ -f "$CONFIG" ] && cp "$CONFIG" "$MIHOMO_DIR/.config.bak"
-mv "$CAND" "$CONFIG"
+NEW="$MIHOMO_DIR/.config.new"
+cp "$CAND" "$NEW" && mv -f "$NEW" "$CONFIG"
 
-# 3) hot-reload via RESTful API
+# 3) hot-reload via RESTful API (API_SECRET прочитан при source — секрет
+#    ещё работающего ядра, поэтому 401 не будет даже при смене secret)
 APIOUT="$(api PUT "/configs?force=true" \
             -H 'Content-Type: application/json' \
             --data "{\"path\":\"$CONFIG\"}" 2>&1)"

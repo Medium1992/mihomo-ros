@@ -1,0 +1,25 @@
+#!/bin/sh
+# POST ?dir=<key>&name=<file> -> run a script now (cwd = MIHOMO_DIR).
+# Only for scripts/scripts-post.
+. /www/cgi-bin/lib.sh
+
+dir="$(query_get dir)"
+case "$dir" in
+  scripts|scripts-post) ;;
+  *) send_json "400 Bad Request"; printf '{"ok":false,"output":"run only for scripts"}'; exit 0 ;;
+esac
+
+path="$(res_path "$dir" "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad request"}'; exit 0; }
+[ -f "$path" ] || { send_json "404 Not Found"; printf '{"ok":false,"output":"not found"}'; exit 0; }
+
+OUT="$(cd "$MIHOMO_DIR" && /bin/sh "$path" 2>&1)"
+RC=$?
+ESC="$(printf '%s' "$OUT" | json_escape)"
+
+send_json "200 OK"
+if [ "$RC" -eq 0 ]; then
+  printf '{"ok":true,"output":"%s"}'  "${ESC:-(no output)}"
+else
+  printf '{"ok":false,"output":"exit %s\\n%s"}' "$RC" "$ESC"
+fi

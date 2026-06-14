@@ -1,0 +1,17 @@
+#!/bin/sh
+# POST ?dir=<key>&name=<file>  body=content -> create/overwrite.
+# scripts get +x; provider files are plain data.
+. /www/cgi-bin/lib.sh
+
+dir="$(query_get dir)"
+path="$(res_path "$dir" "$(query_get name)")" || {
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"bad request"}'; exit 0; }
+
+mkdir -p "$(res_dir "$dir")"
+read_body > "$path"
+case "$dir" in
+  scripts|scripts-post) chmod +x "$path" 2>/dev/null || true ;;
+esac
+
+send_json "200 OK"
+printf '{"ok":true,"output":"saved %s"}' "$(basename "$path" | json_escape)"

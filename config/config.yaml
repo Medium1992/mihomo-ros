@@ -1,13 +1,3 @@
-# ─────────────────────────────────────────────────────────────
-#  mihomo-ros — стартовый конфиг
-#  Рабочая директория ядра: /etc/mihomo  (-d)
-#  Папки для файлов:
-#    proxy-providers/  — провайдеры прокси (.yaml)
-#    provider-rules/   — провайдеры правил (.yaml / .list / .mrs)
-#    scripts/          — sh-хуки, выполняются entrypoint при старте
-# ─────────────────────────────────────────────────────────────
-
-# ── Общие ────────────────────────────────────────────────────
 mixed-port: 7890
 allow-lan: true
 bind-address: '*'
@@ -17,17 +7,13 @@ ipv6: false
 unified-delay: true
 tcp-concurrent: true
 find-process-mode: 'off'
-
-# RESTful API ядра. Вебка применяет конфиг через этот порт.
 external-controller: 0.0.0.0:9090
 secret: ""
-# external-ui: ui          # положи дашборд в /etc/mihomo/ui и раскомментируй
 
 profile:
   store-selected: true
   store-fake-ip: true
 
-# ── Снифер ───────────────────────────────────────────────────
 sniffer:
   enable: true
   override-destination: false
@@ -43,7 +29,6 @@ sniffer:
     - "Mijia Cloud"
     - "+.push.apple.com"
 
-# ── DNS ──────────────────────────────────────────────────────
 dns:
   enable: true
   ipv6: false
@@ -63,41 +48,18 @@ dns:
   proxy-server-nameserver:
     - https://1.1.1.1/dns-query
 
-# ── Прокси ───────────────────────────────────────────────────
 proxies: []
 
-# ── Провайдеры прокси (файлы в proxy-providers/) ─────────────
 proxy-providers: {}
-# example:
-#   my-sub:
-#     type: http
-#     url: "https://example.com/sub"
-#     path: ./proxy-providers/my-sub.yaml
-#     interval: 3600
-#     health-check:
-#       enable: true
-#       url: https://www.gstatic.com/generate_204
-#       interval: 300
 
-# ── Группы ───────────────────────────────────────────────────
 proxy-groups:
   - name: PROXY
     type: select
     proxies:
       - DIRECT
 
-# ── Провайдеры правил (файлы в provider-rules/) ──────────────
 rule-providers: {}
-# example:
-#   ru-bundle:
-#     type: http
-#     behavior: domain
-#     format: mrs
-#     url: "https://example.com/ru.mrs"
-#     path: ./provider-rules/ru-bundle.mrs
-#     interval: 86400
 
-# ── Правила ──────────────────────────────────────────────────
 rules:
   - GEOIP,private,DIRECT,no-resolve
   - MATCH,PROXY

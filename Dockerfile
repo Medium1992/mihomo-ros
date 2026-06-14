@@ -31,11 +31,13 @@ RUN set -eu; \
     rm -f /tmp/mihomo.gz
 
 RUN mkdir -p /final/etc/mihomo/scripts \
+             /final/etc/mihomo/scripts-post \
              /final/etc/mihomo/proxy-providers \
              /final/etc/mihomo/provider-rules
 COPY www/                /final/www/
 COPY config/config.yaml  /final/etc/mihomo/config.yaml.default
-COPY config/scripts/     /final/etc/mihomo/scripts/
+COPY config/scripts/      /final/etc/mihomo/scripts/
+COPY config/scripts-post/ /final/etc/mihomo/scripts-post/
 COPY entrypoint.sh       /final/entrypoint.sh
 RUN chmod +x /final/entrypoint.sh /final/usr/local/bin/mihomo /final/www/cgi-bin/*
 
