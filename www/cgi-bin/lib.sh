@@ -95,13 +95,30 @@ res_path() {
   printf '%s/%s' "$d" "$name"
 }
 
-# curl wrapper for the mihomo RESTful API, adds bearer secret if set
+# минимальный HTTP-клиент для RESTful API mihomo поверх busybox nc (без curl).
+# usage: api METHOD PATH [JSON_BODY]
+#   печатает тело ответа в stdout; код возврата 0 только при HTTP 2xx.
 api() {
-  method="$1"; path="$2"; shift 2
-  if [ -n "$API_SECRET" ]; then
-    curl -fsS -X "$method" "http://$API_HOST:$API_PORT$path" \
-      -H "Authorization: Bearer $API_SECRET" "$@"
-  else
-    curl -fsS -X "$method" "http://$API_HOST:$API_PORT$path" "$@"
-  fi
+  method="$1"; path="$2"; body="${3:-}"
+  resp="$(
+    {
+      printf '%s %s HTTP/1.0\r\n' "$method" "$path"
+      printf 'Host: %s\r\nConnection: close\r\n' "$API_HOST"
+      [ -n "$API_SECRET" ] && printf 'Authorization: Bearer %s\r\n' "$API_SECRET"
+      if [ -n "$body" ]; then
+        printf 'Content-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' \
+          "$(printf '%s' "$body" | wc -c | tr -d ' ')" "$body"
+      else
+        printf '\r\n'
+      fi
+    } | nc -w 5 "$API_HOST" "$API_PORT" 2>/dev/null
+  )"
+  [ -n "$resp" ] || return 1
+  # тело ответа = всё после первой пустой строки
+  printf '%s' "$resp" | sed '1,/^\r\{0,1\}$/d'
+  # статус из первой строки "HTTP/1.0 NNN ..."
+  case "$(printf '%s\n' "$resp" | head -n1 | tr -d '\r' | awk '{print $2}')" in
+    2*) return 0 ;;
+    *)  return 1 ;;
+  esac
 }

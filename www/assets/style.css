@@ -183,13 +183,30 @@ body{
   border-right:1px solid var(--border-soft);user-select:none;
   overflow:hidden;white-space:pre;
 }
-#code{
-  flex:1;resize:none;border:0;outline:0;padding:16px 18px;
-  background:transparent;color:var(--text);
+/* подсветка: прозрачная textarea поверх подсвеченного <pre> (полное совпадение
+   шрифта/паддинга/межстрочного — иначе каретка «уедет» от текста) */
+.code-wrap{position:relative;flex:1;min-width:0;height:100%;overflow:hidden}
+#hl,#code{
+  margin:0;position:absolute;inset:0;border:0;
+  padding:16px 18px;
   font-family:var(--mono);font-size:13px;line-height:1.6;
-  tab-size:2;white-space:pre;overflow:auto;
+  letter-spacing:0;tab-size:2;white-space:pre;
 }
+#hl{overflow:hidden;background:transparent;color:var(--text);
+  pointer-events:none;z-index:1}
+#hl code{font:inherit;color:inherit;background:none;padding:0}
+#code{overflow:auto;resize:none;outline:0;z-index:2;
+  background:transparent;color:transparent;caret-color:var(--text)}
 #code::selection{background:rgba(109,124,255,.32)}
+/* токены подсветки YAML/sh */
+.hl .k{color:var(--accent-2)}                 /* yaml-ключ */
+.hl .s,.hl .val{color:var(--green)}           /* строка / значение скаляра */
+.hl .b{color:#569cd6}                         /* bool / null */
+.hl .n{color:#d19a66}                         /* число */
+.hl .c{color:var(--muted-2);font-style:italic}/* комментарий */
+.hl .v{color:#6db3ff}                         /* sh-переменная */
+.hl .kw{color:var(--accent-2);font-weight:600}/* sh control-flow */
+.hl .cmd{color:#e5c07b}                       /* sh-команда */
 
 /* ── console ─────────────────────────────────────────────── */
 .console{
