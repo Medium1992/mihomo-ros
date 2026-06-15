@@ -36,6 +36,9 @@ body{
   display:flex;flex-direction:column;padding:18px 14px;gap:18px;
 }
 .brand{display:flex;align-items:center;gap:11px;padding:4px 6px}
+.brand-gh{margin-left:auto;color:var(--muted);display:flex;align-items:center;
+  transition:color .15s}
+.brand-gh:hover{color:var(--text)}
 .brand-mark{
   width:38px;height:38px;border-radius:11px;display:grid;place-items:center;
   font-family:var(--mono);font-weight:700;font-size:20px;color:#fff;
@@ -78,6 +81,12 @@ body{
 .dot.up{background:var(--green);box-shadow:0 0 10px 1px rgba(61,220,151,.6)}
 .dot.down{background:var(--red);box-shadow:0 0 10px 1px rgba(255,93,108,.5)}
 .ver{font-family:var(--mono);font-size:11px;color:var(--muted-2)}
+.mihomo-ui-link{
+  display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--accent);
+  text-decoration:none;padding:7px 10px;border-radius:9px;
+  border:1px solid rgba(109,124,255,.3);transition:.15s;
+}
+.mihomo-ui-link:hover{background:rgba(109,124,255,.12);border-color:var(--accent)}
 
 /* ── main ────────────────────────────────────────────────── */
 .main{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;padding:18px 22px 20px;gap:14px}

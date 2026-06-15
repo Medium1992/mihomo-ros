@@ -2,16 +2,17 @@
 
 # mihomo-ros
 
-> Multi-arch Docker container for **MikroTik RouterOS**: the [mihomo](https://github.com/MetaCubeX/mihomo) core plus a built-in **web panel on pure `busybox httpd` + sh CGI** (no Node.js) — a comfortable hand-editing YAML/sh workbench for people who write their mihomo config themselves.
+> Multi-arch Docker container for **MikroTik RouterOS**: the [mihomo](https://github.com/MetaCubeX/mihomo) core plus a built-in **web panel on pure `busybox httpd` + sh CGI** (no Node.js) — a comfortable all-in-one YAML/sh editor for people who write their mihomo config by hand.
 
-[![GitHub release](https://img.shields.io/github/v/release/Medium1992/mihomo-ros?label=release)](https://github.com/Medium1992/mihomo-ros/releases)
+[![Docker Pulls](https://img.shields.io/docker/pulls/medium1992/mihomo-ros?logo=docker&label=docker%20pulls)](https://hub.docker.com/r/medium1992/mihomo-ros)
+[![Docker Image Size](https://img.shields.io/docker/image-size/medium1992/mihomo-ros/latest?logo=docker&label=image%20size)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![License](https://img.shields.io/github/license/Medium1992/mihomo-ros)](./LICENSE)
 ![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-blue)
 [![Telegram](https://img.shields.io/badge/Telegram-group-blue?logo=telegram)](https://t.me/+96HVPF3Ww6o3YTNi)
 
 ## ✨ Features
 
-- 🧰 **Hand-editing workbench, not a wizard** — a fast YAML/sh editor for advanced users, not a form-based config builder
+- 🧰 **All-in-one editor, not a wizard** — a fast YAML/sh editor for advanced users, not a form-based config builder
 - 🖥 **Built-in WebUI** on port `80`, served by busybox httpd straight from the container — no CDN, works offline
 - 🧩 **Section navigation in one file** — the YAML config is sliced by upstream top-level keys (General, DNS, Sniffer, Proxies, Proxy-groups, Rules, …); edit a slice or the whole file, single source of truth
 - 📖 **Per-section mihomo docs** — every section shows a short note, an example, and a direct link to the official wiki
@@ -65,39 +66,44 @@ The core config lives in `./data` on the host and survives container re-creation
 
 ## 🛠 RouterOS install
 
-Enable container support first (RouterOS 7.20+):
+> ⚠️ Syntax below is for **RouterOS 7.21+** (mounts and envs are attached via **lists**: `mountlists` / `envlists`). On older releases the commands differ.
+
+Enable container support first:
 
 ```
 /system/device-mode/print
 /system/device-mode/update mode=advanced container=yes
 ```
 
-Then create a veth, mount and container (adjust disk/addresses to your setup):
+Then create a veth, mount/env lists and the container (adjust disk/addresses to your setup):
 
 ```routeros
-/interface/veth/add name=veth-mihomo address=172.17.0.2/24 gateway=172.17.0.1
-/ip/address/add address=172.17.0.1/24 interface=veth-mihomo
+/interface/veth/add name=veth-mihomo address=192.168.255.2/30 gateway=192.168.255.1
+/ip/address/add address=192.168.255.1/30 interface=veth-mihomo
 
 /container/config/set registry-url=https://ghcr.io tmpdir=usb1/pull
-/container/mounts/add name=mihomo-data src=usb1/mihomo dst=/etc/mihomo
-/container/envs/add name=mihomo-env key=BASIC_AUTH_USER value=admin
-/container/envs/add name=mihomo-env key=BASIC_AUTH_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
+
+/container/mounts/add list=mihomo-ros src=usb1/mihomo dst=/etc/mihomo
+/container/envs/add list=mihomo-ros key=BASIC_AUTH_USER value=admin
+/container/envs/add list=mihomo-ros key=BASIC_AUTH_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
 
 /container/add remote-image=ghcr.io/medium1992/mihomo-ros:latest \
   interface=veth-mihomo root-dir=usb1/mihomo-root \
-  mounts=mihomo-data envlist=mihomo-env logging=yes start-on-boot=yes
+  mountlists=mihomo-ros envlists=mihomo-ros logging=yes start-on-boot=yes
 ```
 
-Then open `http://172.17.0.2/` and edit the config in the UI. Route LAN traffic to the container via mangle/routes as usual.
+Then open `http://192.168.255.2/` and edit the config in the UI. Route LAN traffic to the container via mangle/routes as usual.
 
 ## 🔐 Environment variables
 
+There are only **two** ENVs, both for the web panel basic auth — by default `admin` / `admin`:
+
 | ENV | Default | Description |
 |---|---|---|
-| `BASIC_AUTH_USER` | `admin` | Web panel login. Empty (with empty hash) = auth disabled. |
-| `BASIC_AUTH_HASH` | hash of `admin` | **Ready md5crypt hash** (`$1$…`) of the password. Generate it on the **Tools** page. |
+| `BASIC_AUTH_USER` | `admin` | Web panel login. Leave both empty to disable auth. |
+| `BASIC_AUTH_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= hash of `admin`) | **Ready md5crypt hash** (`$1$…`) of the password. Generate yours on the **Tools** page. |
 
-> The API port and secret are **not** ENVs — they're read from your `config.yaml` (`external-controller` / `secret`). The web panel applies changes through that controller.
+> Everything else lives in `config.yaml`, not in ENV. The API port and secret are read from it (`external-controller` / `secret`); routing/network is set up by the hook scripts in `scripts/` and `scripts-post/`.
 
 ## 📁 Layout
 
