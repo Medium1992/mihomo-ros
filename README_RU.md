@@ -2,7 +2,7 @@
 
 # mihomo-ros
 
-> Мультиарх Docker-контейнер для **MikroTik RouterOS**: ядро [mihomo](https://github.com/MetaCubeX/mihomo) плюс встроенная **веб-панель на чистом `busybox httpd` + sh CGI** (без Node.js) — удобный редактор-комбайн YAML/sh для тех, кто пишет конфиг mihomo руками.
+> Мультиархитектурный Docker-контейнер для **MikroTik RouterOS**: ядро [mihomo](https://github.com/MetaCubeX/mihomo) плюс встроенная **веб-панель на чистом `busybox httpd` + sh CGI** (без Node.js) — удобный редактор-комбайн YAML/sh для тех, кто пишет конфиг mihomo руками.
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/medium1992/mihomo-ros?logo=docker&label=docker%20pulls)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![Docker Image Size](https://img.shields.io/docker/image-size/medium1992/mihomo-ros/latest?logo=docker&label=image%20size)](https://hub.docker.com/r/medium1992/mihomo-ros)
@@ -12,7 +12,7 @@
 
 ## ✨ Возможности
 
-- 🧰 **Редактор-комбайн, а не визард** — быстрый YAML/sh-редактор для продвинутых, а не визуальный конструктор конфига
+- 🧰 **Ручной редактор** — быстрый YAML/sh-редактор для продвинутых, а не визуальный конструктор конфига
 - 🖥 **Встроенная вебка** на порту `80`, отдаётся busybox httpd прямо из контейнера — без CDN, работает офлайн
 - 🧩 **Навигация по разделам одного файла** — YAML-конфиг режется по top-level ключам upstream (Общие, DNS, Снифер, Прокси, Группы, Правила, …); правишь срез или весь файл, единый источник истины
 - 📖 **Дока mihomo в каждом разделе** — короткое примечание, пример и прямая ссылка на официальную вики
@@ -100,7 +100,7 @@ docker run -d --name mihomo-ros \
 
 | ENV | По умолч. | Назначение |
 |---|---|---|
-| `BASIC_AUTH_USER` | `admin` | Логин веб-панели. Оставь обе пустыми, чтобы выключить auth. |
+| `BASIC_AUTH_USER` | `admin` | Логин веб-панели. |
 | `BASIC_AUTH_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= хеш `admin`) | **Готовый md5crypt-хеш** (`$1$…`) пароля. Свой сгенерируй на странице **Инструменты**. |
 
 > Всё остальное — в `config.yaml`, а не в ENV. Порт и секрет API читаются из него (`external-controller` / `secret`); маршрутизация/сеть настраивается хук-скриптами в `scripts/` и `scripts-post/`.
