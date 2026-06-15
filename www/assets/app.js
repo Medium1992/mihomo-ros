@@ -5,9 +5,55 @@
   const $ = (id) => document.getElementById(id);
   const code = $("code");
   const gutter = $("gutter");
+  const hl = $("hl");
+  const hlCode = hl ? hl.querySelector("code") : null;
   const consoleBody = $("consoleBody");
   const consoleTitle = $("consoleTitle");
   const toast = $("toast");
+
+  /* ── мини-подсветка YAML / sh (для слоя #hl под textarea) ─── */
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // порядок групп = приоритет; на каждой позиции совпадает ровно одна
+  // YAML: строки, комментарии, ключи; bool — когда это всё значение; n — чистое
+  // целое (не часть IP/диапазона/версии, т.е. не примыкает к . - /); val —
+  // прочие скалярные значения (после "ключ: " или "- "), не начиная со списка [.
+  const YAML_RE = /(?<s>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')|(?<c>(?:^|[ \t])#[^\n]*)|(?<k>^[ \t]*(?:- )*[\w.\-\/]+(?=:(?:\s|$)))|(?<b>(?<=[:\-][ \t])(?:true|false|null|yes|no|on|off)(?=[ \t]*(?:#|$)))|(?<n>(?<![\w.\/-])\d+(?:-\d+)*(?![\w.\/-]))|(?<val>(?<=[:\-\[,][ \t]*)[^\s,\[\]]+)/gm;
+  // sh: ключевые слова = только управляющие конструкции; команды (первое слово
+  // строки, не keyword) — отдельным классом cmd. Плюс строки, переменные, комменты.
+  const SH_KW = "if|then|else|elif|fi|for|in|do|done|while|until|case|esac|function|return|break|continue|exit|select";
+  const SH_RE = new RegExp(
+    "(?<s>\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*')" +
+    "|(?<v>\\$\\{[^}]*\\}|\\$[\\w@*#?!-]+)" +
+    "|(?<c>(?:^|[ \\t])#[^\\n]*)" +
+    "|(?<kw>\\b(?:" + SH_KW + ")\\b)" +
+    // команда = слово в командной позиции: начало строки или после | && || ; ! ( {
+    // do/then/else; не keyword; не присваивание (за словом идёт пробел/;/&/|/)/EOL)
+    "|(?<cmd>(?<=(?:^|[|&;!({]|\\b(?:do|then|else))[ \\t]*)(?!(?:" + SH_KW + ")\\b)[A-Za-z_][\\w./-]*(?=[ \\t;&|)]|$))",
+    "gm");
+  function highlight(text, lang) {
+    const re = lang === "sh" ? SH_RE : YAML_RE;
+    re.lastIndex = 0;
+    let out = "", last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) out += esc(text.slice(last, m.index));
+      let cls = "";
+      for (const g in m.groups) { if (m.groups[g] != null) { cls = g; break; } }
+      out += '<span class="' + cls + '">' + esc(m[0]) + "</span>";
+      last = re.lastIndex;
+      if (m.index === re.lastIndex) re.lastIndex++;   // защита от zero-length
+    }
+    return out + esc(text.slice(last));
+  }
+  function currentLang() {
+    if (view === "yaml") return "yaml";
+    if (isRes(view) && RES[view].kind === "prov") return "yaml";
+    return "sh";
+  }
+  function paintHL() {
+    if (!hlCode) return;
+    hlCode.innerHTML = highlight(code.value, currentLang()) + "\n";
+    hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft;
+  }
 
   // resource descriptors for the file-manager views
   const RES = {
@@ -115,8 +161,12 @@
     let out = "";
     for (let i = 1; i <= n; i++) out += i + "\n";
     gutter.textContent = out;
+    paintHL();
   }
-  const syncScroll = () => { gutter.scrollTop = code.scrollTop; };
+  const syncScroll = () => {
+    gutter.scrollTop = code.scrollTop;
+    if (hl) { hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; }
+  };
 
   code.addEventListener("keydown", (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -125,6 +175,18 @@
       if (e.shiftKey) outdentLines();
       else if (multiLineSel()) indentLines();
       else document.execCommand("insertText", false, "  ");
+    } else if (e.key === "Enter" && !ctrl && !e.shiftKey && !e.altKey) {
+      // автоотступ: сохраняем отступ строки; после "key:" в YAML добавляем уровень
+      const v = code.value, p = code.selectionStart;
+      if (p !== code.selectionEnd) return;             // есть выделение — обычное поведение
+      const ls = v.lastIndexOf("\n", p - 1) + 1;
+      const line = v.slice(ls, p);
+      let indent = (line.match(/^[ \t]*/) || [""])[0];
+      const body = line.slice(indent.length);
+      // в YAML после "ключ:" (без значения) углубляем на уровень
+      if (currentLang() === "yaml" && body !== "" && /:\s*$/.test(body)) indent += "  ";
+      e.preventDefault();
+      document.execCommand("insertText", false, "\n" + indent);
     } else if (ctrl && e.key === "/") { e.preventDefault(); toggleComment(); }
     else if (ctrl && e.key === "]") { e.preventDefault(); indentLines(); }
     else if (ctrl && e.key === "[") { e.preventDefault(); outdentLines(); }
@@ -592,6 +654,7 @@
         cfgFull = s.full; cfgSel = s.sel; dirty = s.dirty;
         buildSectionList();
         (cfgSel !== null && sectionPresent(cfgSel)) ? selectSection(cfgSel) : selectWhole();
+        setConsole("Консоль", "YAML-конфиг — выбери раздел слева или редактируй весь файл.", "muted");
         refreshStatus();
       } else { cfgSel = null; loadConfig(); refreshStatus(); }
     } else if (tools) {

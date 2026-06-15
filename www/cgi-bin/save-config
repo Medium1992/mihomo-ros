@@ -56,9 +56,7 @@ fi
 #      true  — ПОЛНОСТЬЮ: пересоздаёт и листенеры/порты/TUN (нужно при смене
 #              mixed-port/allow-lan/bind-address/tun/listeners), рвёт соединения.
 FORCE="$(query_get force)"; [ "$FORCE" = "true" ] || FORCE="false"
-APIOUT="$(api PUT "/configs?force=$FORCE" \
-            -H 'Content-Type: application/json' \
-            --data "{\"path\":\"$CONFIG\"}" 2>&1)"
+APIOUT="$(api PUT "/configs?force=$FORCE" "{\"path\":\"$CONFIG\"}" 2>&1)"
 if [ $? -ne 0 ]; then
   ESC="$(printf 'saved, but reload failed:\n%s' "$APIOUT" | json_escape)"
   send_json "200 OK"

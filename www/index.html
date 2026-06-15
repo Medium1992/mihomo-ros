@@ -101,8 +101,11 @@
         <section class="editor-wrap" id="editorWrap">
           <div class="editor" id="editor">
             <div class="gutter" id="gutter"></div>
-            <textarea id="code" spellcheck="false" autocomplete="off"
-                      autocapitalize="off" wrap="off"></textarea>
+            <div class="code-wrap">
+              <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
+              <textarea id="code" spellcheck="false" autocomplete="off"
+                        autocapitalize="off" autocorrect="off" wrap="off"></textarea>
+            </div>
           </div>
         </section>
 
