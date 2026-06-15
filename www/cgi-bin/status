@@ -11,6 +11,9 @@ else
   RUNNING=false
 fi
 
+EXT_UI="$(_yaml external-ui)"
+
 send_json "200 OK"
-printf '{"running":%s,"version":"%s","config":"%s"}' \
-  "$RUNNING" "$VER" "$(printf '%s' "$CONFIG" | json_escape)"
+printf '{"running":%s,"version":"%s","config":"%s","apiPort":"%s","ui":"%s"}' \
+  "$RUNNING" "$VER" "$(printf '%s' "$CONFIG" | json_escape)" \
+  "$API_PORT" "$(printf '%s' "$EXT_UI" | json_escape)"

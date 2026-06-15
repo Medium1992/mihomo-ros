@@ -2,16 +2,17 @@
 
 # mihomo-ros
 
-> Мультиарх Docker-контейнер для **MikroTik RouterOS**: ядро [mihomo](https://github.com/MetaCubeX/mihomo) плюс встроенная **веб-панель на чистом `busybox httpd` + sh CGI** (без Node.js) — удобный верстак для ручного редактирования YAML/sh для тех, кто пишет конфиг mihomo сам.
+> Мультиарх Docker-контейнер для **MikroTik RouterOS**: ядро [mihomo](https://github.com/MetaCubeX/mihomo) плюс встроенная **веб-панель на чистом `busybox httpd` + sh CGI** (без Node.js) — удобный редактор-комбайн YAML/sh для тех, кто пишет конфиг mihomo руками.
 
-[![GitHub release](https://img.shields.io/github/v/release/Medium1992/mihomo-ros?label=release)](https://github.com/Medium1992/mihomo-ros/releases)
+[![Docker Pulls](https://img.shields.io/docker/pulls/medium1992/mihomo-ros?logo=docker&label=docker%20pulls)](https://hub.docker.com/r/medium1992/mihomo-ros)
+[![Docker Image Size](https://img.shields.io/docker/image-size/medium1992/mihomo-ros/latest?logo=docker&label=image%20size)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![License](https://img.shields.io/github/license/Medium1992/mihomo-ros)](./LICENSE)
 ![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-blue)
 [![Telegram](https://img.shields.io/badge/Telegram-group-blue?logo=telegram)](https://t.me/+96HVPF3Ww6o3YTNi)
 
 ## ✨ Возможности
 
-- 🧰 **Верстак для ручной правки, а не мастер** — быстрый YAML/sh-редактор для продвинутых, а не визуальный конструктор конфига
+- 🧰 **Редактор-комбайн, а не визард** — быстрый YAML/sh-редактор для продвинутых, а не визуальный конструктор конфига
 - 🖥 **Встроенная вебка** на порту `80`, отдаётся busybox httpd прямо из контейнера — без CDN, работает офлайн
 - 🧩 **Навигация по разделам одного файла** — YAML-конфиг режется по top-level ключам upstream (Общие, DNS, Снифер, Прокси, Группы, Правила, …); правишь срез или весь файл, единый источник истины
 - 📖 **Дока mihomo в каждом разделе** — короткое примечание, пример и прямая ссылка на официальную вики
@@ -65,39 +66,44 @@ docker run -d --name mihomo-ros \
 
 ## 🛠 Установка на RouterOS
 
-Сначала включи поддержку контейнеров (RouterOS 7.20+):
+> ⚠️ Синтаксис ниже — для **RouterOS 7.21+** (mounts и envs цепляются **списками**: `mountlists` / `envlists`). На старых версиях команды отличаются.
+
+Сначала включи поддержку контейнеров:
 
 ```
 /system/device-mode/print
 /system/device-mode/update mode=advanced container=yes
 ```
 
-Затем создай veth, монтирование и контейнер (диск/адреса подставь свои):
+Затем создай veth, списки mount/env и контейнер (диск/адреса подставь свои):
 
 ```routeros
-/interface/veth/add name=veth-mihomo address=172.17.0.2/24 gateway=172.17.0.1
-/ip/address/add address=172.17.0.1/24 interface=veth-mihomo
+/interface/veth/add name=veth-mihomo address=192.168.255.2/30 gateway=192.168.255.1
+/ip/address/add address=192.168.255.1/30 interface=veth-mihomo
 
 /container/config/set registry-url=https://ghcr.io tmpdir=usb1/pull
-/container/mounts/add name=mihomo-data src=usb1/mihomo dst=/etc/mihomo
-/container/envs/add name=mihomo-env key=BASIC_AUTH_USER value=admin
-/container/envs/add name=mihomo-env key=BASIC_AUTH_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
+
+/container/mounts/add list=mihomo-ros src=usb1/mihomo dst=/etc/mihomo
+/container/envs/add list=mihomo-ros key=BASIC_AUTH_USER value=admin
+/container/envs/add list=mihomo-ros key=BASIC_AUTH_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
 
 /container/add remote-image=ghcr.io/medium1992/mihomo-ros:latest \
   interface=veth-mihomo root-dir=usb1/mihomo-root \
-  mounts=mihomo-data envlist=mihomo-env logging=yes start-on-boot=yes
+  mountlists=mihomo-ros envlists=mihomo-ros logging=yes start-on-boot=yes
 ```
 
-Открой `http://172.17.0.2/` и правь конфиг в вебке. Трафик LAN направляй в контейнер через mangle/маршруты как обычно.
+Открой `http://192.168.255.2/` и правь конфиг в вебке. Трафик LAN направляй в контейнер через mangle/маршруты как обычно.
 
 ## 🔐 Переменные окружения
 
+Всего **два** ENV, оба для basic auth веб-панели — по умолчанию `admin` / `admin`:
+
 | ENV | По умолч. | Назначение |
 |---|---|---|
-| `BASIC_AUTH_USER` | `admin` | Логин веб-панели. Пусто (вместе с пустым хешем) = auth выключен. |
-| `BASIC_AUTH_HASH` | хеш `admin` | **Готовый md5crypt-хеш** (`$1$…`) пароля. Генерируется на странице **Инструменты**. |
+| `BASIC_AUTH_USER` | `admin` | Логин веб-панели. Оставь обе пустыми, чтобы выключить auth. |
+| `BASIC_AUTH_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= хеш `admin`) | **Готовый md5crypt-хеш** (`$1$…`) пароля. Свой сгенерируй на странице **Инструменты**. |
 
-> Порт и секрет API — **не** ENV, они читаются из твоего `config.yaml` (`external-controller` / `secret`). Через этот контроллер вебка и применяет изменения.
+> Всё остальное — в `config.yaml`, а не в ENV. Порт и секрет API читаются из него (`external-controller` / `secret`); маршрутизация/сеть настраивается хук-скриптами в `scripts/` и `scripts-post/`.
 
 ## 📁 Структура
 

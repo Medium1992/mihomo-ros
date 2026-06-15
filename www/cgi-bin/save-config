@@ -25,13 +25,31 @@ if [ $? -ne 0 ]; then
   exit 0
 fi
 
+# запоминаем старые external-controller/secret ДО подмены конфига
+OLD_EC="$(_yaml external-controller)"
+OLD_SEC="$(_yaml secret)"
+
 # 2) commit: backup + atomic replace on the same filesystem
 [ -f "$CONFIG" ] && cp "$CONFIG" "$MIHOMO_DIR/.config.bak"
 NEW="$MIHOMO_DIR/.config.new"
 cp "$CAND" "$NEW" && mv -f "$NEW" "$CONFIG"
 
+# 2.5) external-controller/secret НЕ применяются на горячую (RESTful-сервер
+#      ядра поднимается один раз при старте процесса). Если они изменились —
+#      перезапускаем mihomo: kill -> супервизор поднимет его с новым конфигом
+#      (на новом порту/секрете). Иначе панель ушла бы на новый порт, а ядро
+#      осталось бы на старом → «ядро недоступно».
+NEW_EC="$(_yaml external-controller)"
+NEW_SEC="$(_yaml secret)"
+if [ "$OLD_EC" != "$NEW_EC" ] || [ "$OLD_SEC" != "$NEW_SEC" ]; then
+  kill -9 $(pidof mihomo) 2>/dev/null || true
+  send_json "200 OK"
+  printf '{"ok":true,"stage":"restart","output":"Конфиг сохранён. Изменены external-controller/secret — ядро перезапускается (несколько секунд)."}'
+  exit 0
+fi
+
 # 3) hot-reload via RESTful API (API_SECRET прочитан при source — секрет
-#    ещё работающего ядра, поэтому 401 не будет даже при смене secret).
+#    ещё работающего ядра, поэтому 401 не будет).
 #    force выбирается вебкой (?force=true|false):
 #      false — МЯГКО: обновляет proxies/groups/rules/dns, входящие
 #              листенеры/порты/TUN НЕ пересоздаются (сокеты клиентов живут);

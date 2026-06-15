@@ -28,16 +28,11 @@ dns:
   cache-algorithm: arc
   prefer-h3: false
   use-system-hosts: false
-  respect-rules: true
+  respect-rules: false
   listen: 0.0.0.0:53
   ipv6: false
   enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  fake-ip-filter:
-    - "*.lan"
-    - "+.local"
-    - "geosite:private"
-    - "+.market.xiaomi.com"
+  fake-ip-range: 198.18.0.1/15
   default-nameserver:
     - 8.8.8.8
     - 9.9.9.9
@@ -46,9 +41,6 @@ dns:
     - https://dns.google/dns-query#disable-qtype-65=true&disable-ipv6=true
     - https://cloudflare-dns.com/dns-query#disable-qtype-65=true&disable-ipv6=true
     - https://dns.quad9.net/dns-query#disable-qtype-65=true&disable-ipv6=true
-  proxy-server-nameserver:
-    - https://dns.google/dns-query#disable-qtype-65=true&disable-ipv6=true
-    - https://cloudflare-dns.com/dns-query#disable-qtype-65=true&disable-ipv6=true
 
 hosts:
   dns.google: [8.8.8.8, 8.8.4.4]

@@ -206,9 +206,18 @@
       $("statusText").textContent = j.running ? "ядро запущено" : "ядро недоступно";
       $("version").textContent = j.version || "—";
       if (j.config && view === "yaml" && cfgSel === null) $("cfgPath").textContent = j.config;
+      // ссылка на дашборд mihomo (external-ui): тот же хост, порт API ядра
+      const ui = $("mihomoUi");
+      if (j.running && j.ui && j.apiPort) {
+        ui.href = location.protocol + "//" + location.hostname + ":" + j.apiPort + "/ui/";
+        ui.hidden = false;
+      } else {
+        ui.hidden = true;
+      }
     } catch (_) {
       $("statusDot").className = "dot down";
       $("statusText").textContent = "нет связи";
+      $("mihomoUi").hidden = true;
     }
   }
 
@@ -381,10 +390,17 @@
       const j = await jsonFetch("/cgi-bin/save-config?force=" + (hard ? "true" : "false"), txtPost(cfgFull));
       if (j.ok) {
         dirty = false;
-        setConsole("Применено", hard
-          ? "Конфиг сохранён, выполнена полная перезагрузка ✓"
-          : "Конфиг сохранён и мягко применён ✓", "ok");
-        showToast("Конфиг применён ✓", "ok"); refreshStatus();
+        if (j.stage === "restart") {
+          // сменили external-controller/secret -> ядро перезапускается супервизором
+          setConsole("Ядро перезапускается", j.output || "Перезапуск ядра…", "ok");
+          showToast("Ядро перезапускается…", "ok");
+          [3000, 6000, 9000].forEach((t) => setTimeout(refreshStatus, t));
+        } else {
+          setConsole("Применено", hard
+            ? "Конфиг сохранён, выполнена полная перезагрузка ✓"
+            : "Конфиг сохранён и мягко применён ✓", "ok");
+          showToast("Конфиг применён ✓", "ok"); refreshStatus();
+        }
       } else {
         const stage = j.stage === "apply" ? "Сохранён, но перезагрузка не удалась" : "Ошибка валидации";
         setConsole(stage, j.output || "unknown error", "err"); showToast(stage, "err");
