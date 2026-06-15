@@ -100,7 +100,7 @@ There are only **two** ENVs, both for the web panel basic auth — by default `a
 
 | ENV | Default | Description |
 |---|---|---|
-| `BASIC_AUTH_USER` | `admin` | Web panel login. Leave both empty to disable auth. |
+| `BASIC_AUTH_USER` | `admin` | Web panel login. |
 | `BASIC_AUTH_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= hash of `admin`) | **Ready md5crypt hash** (`$1$…`) of the password. Generate yours on the **Tools** page. |
 
 > Everything else lives in `config.yaml`, not in ENV. The API port and secret are read from it (`external-controller` / `secret`); routing/network is set up by the hook scripts in `scripts/` and `scripts-post/`.
