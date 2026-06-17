@@ -32,6 +32,8 @@
 
 It edits files on disk and applies the config through mihomo's RESTful API — no container restart needed.
 
+<img width="1264" height="1268" alt="image" src="https://github.com/user-attachments/assets/c14355f8-57f2-4bb2-8535-24f1a22d6f1f" />
+
 **Pages:**
 
 - **YAML config** — one file, navigable by section. The left column lists *Whole config* + every upstream section (`general`, `dns`, `sniffer`, `tun`, `hosts`, `ntp`, `proxies`, `proxy-groups`, `proxy-providers`, `rules`, `rule-providers`, `sub-rules`, `listeners`, `profile`, `experimental`, `tunnels`). *General* aggregates every top-level scalar that doesn't belong to another tab, even if scattered. Empty sections show a placeholder with a starter example.
