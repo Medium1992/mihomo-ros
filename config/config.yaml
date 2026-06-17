@@ -78,5 +78,4 @@ proxy-groups:
 rule-providers:
 
 rules:
-  - GEOIP,private,DIRECT,no-resolve
   - MATCH,PROXY
