@@ -32,6 +32,8 @@
 
 Редактирует файлы на диске и применяет конфиг через RESTful API mihomo — без перезапуска контейнера.
 
+<img width="1264" height="1268" alt="image" src="https://github.com/user-attachments/assets/d243c0db-ef15-464f-9ed7-5fe6f871ba28" />
+
 **Страницы:**
 
 - **YAML конфиг** — один файл, навигация по разделам. Левая колонка: *Весь конфиг* + все секции upstream (`general`, `dns`, `sniffer`, `tun`, `hosts`, `ntp`, `proxies`, `proxy-groups`, `proxy-providers`, `rules`, `rule-providers`, `sub-rules`, `listeners`, `profile`, `experimental`, `tunnels`). *Общие* собирают все top-level скаляры, не относящиеся к другим вкладкам, даже если они разбросаны по файлу. Пустые разделы показывают подсказку с примером для старта.
