@@ -51,7 +51,12 @@
   }
   function paintHL() {
     if (!hlCode) return;
-    hlCode.innerHTML = highlight(code.value, currentLang()) + "\n";
+    const v = code.value;
+    let html = highlight(v, currentLang());
+    // textarea держит «фантомную» строку для каретки, если текст кончается \n
+    // (или пуст) — добавляем её и в слой подсветки, иначе каретка внизу уезжает
+    if (v === "" || v.endsWith("\n")) html += " ";
+    hlCode.innerHTML = html;
     hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft;
   }
 
