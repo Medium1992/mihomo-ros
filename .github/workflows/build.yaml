@@ -105,14 +105,14 @@ jobs:
             ${{ env.HUB }}:amd64v2-${{ env.mihomo }}
             ${{ env.HUB }}:amd64v2
 
-      # multi-arch — amd64(v3, AVX2) + arm64 + armv7 + armv6 → :latest
+      # multi-arch — amd64(v3, AVX2) + arm64 + armv7 + armv5 → :latest
       - name: Build and push multi-arch (latest)
         if: steps.check.outputs.build_needed == 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v5
           push: true
           build-args: |
             MIHOMO_VERSION=${{ env.mihomo }}
@@ -183,6 +183,7 @@ jobs:
           export_image "amd64-v3" "linux/amd64"  "${IMAGE_REPO}:${mihomo}"
           export_image "arm64"    "linux/arm64"  "${IMAGE_REPO}:${mihomo}"
           export_image "armv7"    "linux/arm/v7" "${IMAGE_REPO}:${mihomo}"
+          export_image "armv5"    "linux/arm/v5" "${IMAGE_REPO}:${mihomo}"
 
           sha256sum telegram-images/*.tar.gz > telegram-images/sha256sums.txt
 

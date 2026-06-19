@@ -41,19 +41,38 @@ COPY config/scripts-post/ /final/etc/mihomo/scripts-post/
 COPY entrypoint.sh       /final/entrypoint.sh
 RUN chmod +x /final/entrypoint.sh /final/usr/local/bin/mihomo /final/www/cgi-bin/*
 
+# armv7/armv5 ходят только через iptables (nft там нет) — убираем nft-скрипты
+# и скрипт выбора/установки backend (05-fw-modules: на этих сборках не нужен,
+# а на armv5 ещё и apk отсутствует).
+RUN if [ "$TARGETARCH" = "arm" ] && { [ "$TARGETVARIANT" = "v7" ] || [ "$TARGETVARIANT" = "v5" ]; }; then \
+      rm -f /final/etc/mihomo/scripts/*nft*.sh* \
+            /final/etc/mihomo/scripts-post/*nft*.sh* \
+            /final/etc/mihomo/scripts/05-fw-modules.sh; \
+    fi
 
-FROM alpine:latest
+
+# Базовые образы по платформам. У Alpine нет armv5 — для него берём scratch
+# и распаковываем готовый Buildroot-rootfs (busybox httpd + iptables + openssl).
+FROM --platform=linux/amd64  alpine:latest AS linux-amd64
+FROM --platform=linux/arm64  alpine:latest AS linux-arm64
+FROM --platform=linux/arm/v7 alpine:latest AS linux-armv7
+FROM --platform=linux/arm/v5 scratch       AS linux-armv5
+ADD rootfs.tar /
+
+FROM ${TARGETOS}-${TARGETARCH}${TARGETVARIANT}
 ARG TARGETARCH
 ARG TARGETVARIANT
 
 COPY --from=package /final /
 
+# armv5 (Buildroot-rootfs) уже содержит нужные пакеты — apk там нет, пропускаем.
 RUN if [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "amd64" ]; then \
         apk add --no-cache ca-certificates busybox-extras openssl tzdata iproute2 nftables; \
     elif [ "$TARGETARCH" = "arm" ] && [ "$TARGETVARIANT" = "v7" ]; then \
         apk add --no-cache ca-certificates busybox-extras openssl tzdata iproute2 iptables iptables-legacy; \
     fi && \
-    if ! ( [ "$TARGETARCH" = "arm" ] && [ "$TARGETVARIANT" = "v5" ] ); then \
+    if ( [ "$TARGETARCH" = "arm64" ] || [ "$TARGETARCH" = "amd64" ] || \
+         ( [ "$TARGETARCH" = "arm" ] && [ "$TARGETVARIANT" = "v7" ] ) ); then \
     rm -f /usr/sbin/iptables /usr/sbin/iptables-save /usr/sbin/iptables-restore && \
     ln -s /usr/sbin/iptables-legacy /usr/sbin/iptables && \
     ln -s /usr/sbin/iptables-legacy-save /usr/sbin/iptables-save && \

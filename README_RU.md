@@ -7,7 +7,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/medium1992/mihomo-ros?logo=docker&label=docker%20pulls)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![Docker Image Size](https://img.shields.io/docker/image-size/medium1992/mihomo-ros/latest?logo=docker&label=image%20size)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![License](https://img.shields.io/github/license/Medium1992/mihomo-ros)](./LICENSE)
-![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-blue)
+![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7%20%7C%20armv5-blue)
 [![Telegram](https://img.shields.io/badge/Telegram-group-blue?logo=telegram)](https://t.me/+96HVPF3Ww6o3YTNi)
 
 ## ✨ Возможности
@@ -128,7 +128,7 @@ docker run -d --name mihomo-ros \
 
 ## 🐳 Архитектуры и сборка
 
-`latest` — мультиарх: `amd64` (собран как **v3**), `arm64`, `armv7`. Для старых x86-CPU — теги `amd64v1` / `amd64v2`.
+`latest` — мультиарх: `amd64` (собран как **v3**), `arm64`, `armv7`, `armv5`. Для старых x86-CPU — теги `amd64v1` / `amd64v2`. `armv5` (которого нет у Alpine) собирается на вложенном Buildroot-rootfs (`rootfs.tar`), а не на Alpine.
 
 ```bash
 docker build -t mihomo-ros .                                  # amd64 = v3 по умолчанию
