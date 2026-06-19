@@ -7,7 +7,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/medium1992/mihomo-ros?logo=docker&label=docker%20pulls)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![Docker Image Size](https://img.shields.io/docker/image-size/medium1992/mihomo-ros/latest?logo=docker&label=image%20size)](https://hub.docker.com/r/medium1992/mihomo-ros)
 [![License](https://img.shields.io/github/license/Medium1992/mihomo-ros)](./LICENSE)
-![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-blue)
+![Platforms](https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7%20%7C%20armv5-blue)
 [![Telegram](https://img.shields.io/badge/Telegram-group-blue?logo=telegram)](https://t.me/+96HVPF3Ww6o3YTNi)
 
 ## ✨ Features
@@ -128,7 +128,7 @@ Drop into `/etc/mihomo/` as needed: `geoip.metadb` / `geosite.dat` / `geoip.dat`
 
 ## 🐳 Architectures & build
 
-`latest` is multi-arch: `amd64` (built as **v3**), `arm64`, `armv7`. For older x86 CPUs pull the `amd64v1` / `amd64v2` tags.
+`latest` is multi-arch: `amd64` (built as **v3**), `arm64`, `armv7`, `armv5`. For older x86 CPUs pull the `amd64v1` / `amd64v2` tags. `armv5` (which Alpine doesn't publish) is built on a bundled Buildroot rootfs (`rootfs.tar`) instead of Alpine.
 
 ```bash
 docker build -t mihomo-ros .                                  # amd64 = v3 by default
