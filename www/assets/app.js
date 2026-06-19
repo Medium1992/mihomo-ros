@@ -57,6 +57,11 @@
     // (или пуст) — добавляем её и в слой подсветки, иначе каретка внизу уезжает
     if (v === "" || v.endsWith("\n")) html += " ";
     hlCode.innerHTML = html;
+    // скроллбары textarea съедают её client-область; компенсируем это паддингом
+    // у #hl, чтобы диапазоны прокрутки совпадали (иначе каретка уезжает у краёв
+    // при горизонтальном скролле/прокрутке в самый низ)
+    hl.style.paddingBottom = (16 + (code.offsetHeight - code.clientHeight)) + "px";
+    hl.style.paddingRight = (18 + (code.offsetWidth - code.clientWidth)) + "px";
     hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft;
   }
 
@@ -786,6 +791,7 @@
     else if (e.key === "Enter") { e.preventDefault(); view === "yaml" ? validate() : validateFile(); }
   });
   window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("resize", paintHL);   // пересчёт компенсации скроллбаров
 
   /* ── init ───────────────────────────────────────────────── */
   applyChrome("yaml");      // показать колонку разделов для конфига
