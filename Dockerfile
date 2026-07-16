@@ -2,15 +2,24 @@ FROM --platform=$BUILDPLATFORM alpine:latest AS package
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG MIHOMO_VERSION=latest
+ARG MIHOMO_CUSTOM_CORE=0
+ARG MIHOMO_REPO=MetaCubeX/mihomo
+ARG MIHOMO_CUSTOM_REPO=Medium1992/mihomo-proxy-ros
 ARG AMD64VERSION=v3
 RUN apk add --no-cache curl jq gzip
 
 RUN set -eu; \
-    if [ "$MIHOMO_VERSION" = "latest" ]; then \
-      API="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"; \
+    if [ "$MIHOMO_CUSTOM_CORE" = "1" ]; then \
+      RELEASE_REPO="$MIHOMO_CUSTOM_REPO"; \
     else \
-      API="https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/${MIHOMO_VERSION}"; \
+      RELEASE_REPO="$MIHOMO_REPO"; \
     fi; \
+    if [ "$MIHOMO_VERSION" = "latest" ]; then \
+      API="https://api.github.com/repos/${RELEASE_REPO}/releases/latest"; \
+    else \
+      API="https://api.github.com/repos/${RELEASE_REPO}/releases/tags/${MIHOMO_VERSION}"; \
+    fi; \
+    echo "Using mihomo release repo: ${RELEASE_REPO}"; \
     REL="$(curl -fsSL "$API")"; \
     TAG="$(printf '%s' "$REL" | jq -r '.tag_name')"; \
     [ -n "$TAG" ] && [ "$TAG" != "null" ] || { echo "could not resolve release tag"; exit 1; }; \
