@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "0 18 * * *" # 18:00 UTC — следом за релизами mihomo
   workflow_dispatch:
+    inputs:
+      mihomo_custom_core:
+        description: "Use Medium1992/mihomo-proxy-ros core release instead of upstream MetaCubeX/mihomo"
+        required: false
+        default: "1"
+        type: choice
+        options:
+          - "0"
+          - "1"
 
 jobs:
   build:
@@ -18,6 +27,9 @@ jobs:
       HUB: medium1992/mihomo-ros
       PACKAGE_OWNER: medium1992
       PACKAGE_NAME: mihomo-ros
+      MIHOMO_CUSTOM_CORE: ${{ github.event.inputs.mihomo_custom_core || '1' }}
+      MIHOMO_REPO: MetaCubeX/mihomo
+      MIHOMO_CUSTOM_REPO: Medium1992/mihomo-proxy-ros
       DELETE_UNTAGGED: "true"
 
     steps:
@@ -25,10 +37,17 @@ jobs:
 
       - name: Get latest mihomo release
         run: |
-          MIHOMO=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.tag_name')
+          if [ "${MIHOMO_CUSTOM_CORE}" = "1" ]; then
+            MIHOMO_RELEASE_REPO="${MIHOMO_CUSTOM_REPO}"
+          else
+            MIHOMO_RELEASE_REPO="${MIHOMO_REPO}"
+          fi
+          MIHOMO=$(curl -s https://api.github.com/repos/${MIHOMO_RELEASE_REPO}/releases/latest | jq -r '.tag_name')
           [ -n "$MIHOMO" ] && [ "$MIHOMO" != "null" ] || { echo "no mihomo tag"; exit 1; }
           echo "mihomo=$MIHOMO" >> $GITHUB_ENV
+          echo "mihomo_release_repo=$MIHOMO_RELEASE_REPO" >> $GITHUB_ENV
           echo "mihomo: $MIHOMO"
+          echo "mihomo release repo: $MIHOMO_RELEASE_REPO"
 
       - name: Decide if build is needed
         id: check
@@ -36,7 +55,10 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual run → force build"
             echo "build_needed=true" >> $GITHUB_OUTPUT
-          elif [ -f VERSIONS ] && grep -qx "mihomo=${{ env.mihomo }}" VERSIONS; then
+          elif [ -f VERSIONS ] && \
+               grep -qx "mihomo=${{ env.mihomo }}" VERSIONS && \
+               grep -qx "mihomo_release_repo=${{ env.mihomo_release_repo }}" VERSIONS && \
+               grep -qx "mihomo_custom_core=${{ env.MIHOMO_CUSTOM_CORE }}" VERSIONS; then
             echo "Already built ${{ env.mihomo }}"
             echo "build_needed=false" >> $GITHUB_OUTPUT
           else
@@ -80,6 +102,9 @@ jobs:
           push: true
           build-args: |
             MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
             AMD64VERSION=v1
           tags: |
             ${{ env.GHCR }}:amd64v1-${{ env.mihomo }}
@@ -98,12 +123,36 @@ jobs:
           push: true
           build-args: |
             MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
             AMD64VERSION=v2
           tags: |
             ${{ env.GHCR }}:amd64v2-${{ env.mihomo }}
             ${{ env.GHCR }}:amd64v2
             ${{ env.HUB }}:amd64v2-${{ env.mihomo }}
             ${{ env.HUB }}:amd64v2
+
+      # amd64 v4 — AVX512, отдельный тег
+      - name: Build and push amd64v4
+        if: steps.check.outputs.build_needed == 'true' && env.MIHOMO_CUSTOM_CORE == '1'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
+            AMD64VERSION=v4
+          tags: |
+            ${{ env.GHCR }}:amd64v4-${{ env.mihomo }}
+            ${{ env.GHCR }}:amd64v4
+            ${{ env.HUB }}:amd64v4-${{ env.mihomo }}
+            ${{ env.HUB }}:amd64v4
 
       # multi-arch — amd64(v3, AVX2) + arm64 + armv7 + armv5 → :latest
       - name: Build and push multi-arch (latest)
@@ -116,12 +165,27 @@ jobs:
           push: true
           build-args: |
             MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
             AMD64VERSION=v3
           tags: |
             ${{ env.GHCR }}:${{ env.mihomo }}
             ${{ env.GHCR }}:latest
             ${{ env.HUB }}:${{ env.mihomo }}
             ${{ env.HUB }}:latest
+
+      - name: Commit VERSIONS
+        if: steps.check.outputs.build_needed == 'true'
+        run: |
+          echo "mihomo=${{ env.mihomo }}" > VERSIONS
+          echo "mihomo_release_repo=${{ env.mihomo_release_repo }}" >> VERSIONS
+          echo "mihomo_custom_core=${{ env.MIHOMO_CUSTOM_CORE }}" >> VERSIONS
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add VERSIONS
+          git commit -m "Auto-update: mihomo ${{ env.mihomo }}" || exit 0
+          git push
 
       - name: Publish container archives to Telegram
         if: steps.check.outputs.build_needed == 'true'
@@ -181,6 +245,9 @@ jobs:
           export_image "amd64-v1" "linux/amd64"  "${IMAGE_REPO}:amd64v1-${mihomo}"
           export_image "amd64-v2" "linux/amd64"  "${IMAGE_REPO}:amd64v2-${mihomo}"
           export_image "amd64-v3" "linux/amd64"  "${IMAGE_REPO}:${mihomo}"
+          if [ "${MIHOMO_CUSTOM_CORE}" = "1" ]; then
+            export_image "amd64-v4" "linux/amd64"  "${IMAGE_REPO}:amd64v4-${mihomo}"
+          fi
           export_image "arm64"    "linux/arm64"  "${IMAGE_REPO}:${mihomo}"
           export_image "armv7"    "linux/arm/v7" "${IMAGE_REPO}:${mihomo}"
           export_image "armv5"    "linux/arm/v5" "${IMAGE_REPO}:${mihomo}"
@@ -211,16 +278,6 @@ jobs:
             "${thread_form_args[@]}" \
             -F "document=@telegram-images/sha256sums.txt" \
             -F "caption=sha256sums.txt"
-
-      - name: Commit VERSIONS
-        if: steps.check.outputs.build_needed == 'true'
-        run: |
-          echo "mihomo=${{ env.mihomo }}" > VERSIONS
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add VERSIONS
-          git commit -m "Auto-update: mihomo ${{ env.mihomo }}" || exit 0
-          git push
 
       - name: Install crane
         if: steps.check.outputs.build_needed == 'true'
