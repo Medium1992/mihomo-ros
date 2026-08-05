@@ -95,7 +95,7 @@ body{
 .topbar-title .path{font-family:var(--mono);font-size:11.5px;color:var(--muted-2)}
 .topbar-actions{display:flex;gap:9px}
 
-/* баннер про пароль вебки (дефолтный пароль / auth выключен) */
+/* баннер: дефолтный пароль / auth выключен */
 .authwarn{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   padding:10px 14px;border-radius:11px;font-size:12.5px;line-height:1.45;
@@ -137,8 +137,7 @@ body{
   padding:11px 13px;
   font-size:12.5px;font-weight:600;color:var(--text);
 }
-/* панель узкая (230px), поэтому кнопки живут отдельным рядом и с подписями:
-   иконки без текста в такой ширине не читаются */
+/* кнопки отдельным рядом с подписями: в 230px иконки не читаются */
 .files-tools{
   display:grid;grid-template-columns:1fr 1fr;gap:7px;
   padding:0 11px 11px;border-bottom:1px solid var(--border-soft);

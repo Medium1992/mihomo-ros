@@ -2,11 +2,8 @@
 (function () {
   "use strict";
 
-  // frame-buster. Панель нельзя встраивать в чужую страницу: basic auth
-  // браузер приложит сам, и клик по невидимому iframe сработает как клик по
-  // нашим кнопкам (clickjacking). CSRF-guard тут не помогает — Referer у
-  // такого запроса свой же. Заголовок X-Frame-Options busybox httpd не умеет,
-  // а frame-ancestors в мета-теге CSP игнорируется, поэтому проверяем в JS.
+  // frame-buster: X-Frame-Options busybox httpd не умеет, frame-ancestors в
+  // мета-теге CSP игнорируется. От clickjacking'а CSRF-guard не спасает.
   if (window.top !== window.self) {
     document.documentElement.textContent =
       "mihomo-ros: страница не может быть открыта во фрейме";
@@ -112,10 +109,8 @@
   let curFile = null;       // selected file (resource views)
   const store = {};         // per-view buffers
 
-  // .mrs — скомпилированный набор правил mihomo, двоичный. Редактировать его
-  // нечем, но он полноправный файл provider-rules: его нужно уметь залить,
-  // скачать и удалить. Поэтому для него редактор подменяется панелью-заглушкой,
-  // а чтение/запись идут байтами, а не текстом.
+  // .mrs — двоичный набор правил: вместо редактора панель-заглушка,
+  // чтение/запись байтами.
   const isBin = (name) => /\.mrs$/i.test(name || "");
   let binMode = false;
   let fileMeta = {};        // file -> {size, enabled} из последнего list-files
@@ -282,8 +277,7 @@
       .forEach((el) => (el.disabled = b));
     if (!b) syncBinButtons();   // разблокировка не должна включать «Сохранить» у .mrs
   }
-  // в бинарном режиме проверять и сохранять нечего
-  function syncBinButtons() {
+  function syncBinButtons() {          // у .mrs нечего проверять и сохранять
     $("prvCheckBtn").disabled = binMode;
     $("prvSaveBtn").disabled = binMode;
   }
@@ -300,9 +294,7 @@
   const txtPost = (body) => ({ method: "POST", headers: { "Content-Type": "text/plain" }, body });
 
   /* ── status badge ───────────────────────────────────────── */
-  // Панель правит скрипты, которые контейнер выполняет от root, поэтому про
-  // дефолтный пароль и выключенный basic auth говорим прямо в интерфейсе.
-  // Флаги приходят из /cgi-bin/status (он читает реальный /etc/httpd.conf).
+  // флаги из /cgi-bin/status (он читает реальный /etc/httpd.conf)
   function renderAuthWarn(j) {
     const bar = $("authWarn");
     if (!bar) return;
@@ -350,8 +342,16 @@
   async function loadConfig() {
     try {
       const r = await fetch("/cgi-bin/get-config", { cache: "no-store" });
+      const body = await r.text();
+      // если CGI не исполнился (нет +x, раздача статикой), тут будет текст
+      // скрипта или страница ошибки — в редактор такое не пускаем
+      if (!r.ok) throw new Error("get-config вернул HTTP " + r.status);
+      if (/^#!\s*\/|^<(!doctype|html)/i.test(body.trim())) {
+        throw new Error("вместо конфига пришёл не YAML (скрипт или страница ошибки) — "
+          + "похоже, CGI не исполняется: проверь +x и перезапусти контейнер");
+      }
       // нормализуем хвост: один завершающий перевод строки, без пустых строк
-      cfgFull = (await r.text()).replace(/[ \t\r\n]+$/, "") + "\n";
+      cfgFull = body.replace(/[ \t\r\n]+$/, "") + "\n";
       dirty = false;
       buildSectionList();
       if (cfgSel !== null && sectionPresent(cfgSel)) selectSection(cfgSel);
@@ -561,8 +561,7 @@
       .forEach((li) => li.classList.toggle("sel", li.dataset.file === curFile));
   }
 
-  // переключение «редактор ↔ панель двоичного файла»
-  function setBinMode(on, file) {
+  function setBinMode(on, file) {      // редактор <-> панель двоичного файла
     binMode = on;
     $("editorWrap").hidden = on;
     $("binPane").hidden = !on;
@@ -592,6 +591,7 @@
     setBinMode(false);
     try {
       const r = await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)), { cache: "no-store" });
+      if (!r.ok) throw new Error("get-file вернул HTTP " + r.status);
       code.value = await r.text();
       curFile = file; dirty = false; renderGutter();
       $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + file;
@@ -665,7 +665,6 @@
     name = name.trim();
     if (!/^[A-Za-z0-9._-]+$/.test(name)) { showToast("Недопустимое имя", "err"); return; }
     if (isBin(name)) {
-      // .mrs компилирует mihomo, руками его не написать
       setConsole("Так не получится", ".mrs — двоичный формат, вручную его не создать. "
         + "Готовый файл залей кнопкой «⭱ загрузить», либо укажи в конфиге "
         + "rule-provider с format: mrs и url — mihomo скачает его сам.", "err");
@@ -694,10 +693,7 @@
   }
 
   /* ════════════════ импорт / экспорт ════════════════ */
-  // Отдельные файлы делаются целиком на клиенте: скачивание — Blob из того,
-  // что уже пришло по get-config/get-file, загрузка — FileReader в редактор,
-  // дальше штатные «Проверить»/«Сохранить». Своих эндпоинтов для этого нет,
-  // а значит нет и новой поверхности атаки.
+  // Отдельные файлы — целиком на клиенте, через существующие эндпоинты.
 
   function saveBlob(name, blob) {
     const url = URL.createObjectURL(blob);
@@ -728,8 +724,7 @@
   // ── один файл ──
   function downloadCurrent() {
     if (view === "yaml") {
-      // в YAML-виде редактор может показывать срез секции — на диск отдаём
-      // мастер-текст целиком, иначе скачался бы кусок конфига
+      // редактор может показывать срез секции — отдаём мастер-текст
       saveText("config.yaml", cfgFull, "text/yaml");
       showToast("config.yaml скачан", "ok");
       return;
@@ -741,7 +736,7 @@
     showToast(curFile + " скачан", "ok");
   }
 
-  // .mrs тянем блобом: через .text() двоичный файл испортился бы
+  // блобом: через .text() двоичное содержимое испортится
   async function downloadBinary(file) {
     setBusy(true);
     try {
@@ -768,7 +763,7 @@
       return;
     }
     if (!isRes(view)) { showToast("Тут нечего загружать", "err"); return; }
-    // читаем всегда байтами: текст декодируем сами, .mrs так и остаётся байтами
+    // читаем байтами: текст декодируем сами, .mrs остаётся как есть
     pickFile("", async (buf, fname) => {
       const name = fname.trim();
       if (!nameOkFor(view, name)) {
@@ -787,8 +782,7 @@
     }, true);
   }
 
-  // Двоичный файл в редактор не положить, поэтому он пишется на диск сразу —
-  // отдельного шага «Сохранить» для него нет.
+  // в редактор не положить, поэтому пишем сразу — «Сохранить» для него нет
   async function uploadBinary(name, buf) {
     if (!confirm("Записать " + name + " (" + fmtSize(buf.byteLength) + ") в "
         + res().dir + "/?\nФайл с таким именем будет перезаписан.")) return;
@@ -812,8 +806,7 @@
     finally { setBusy(false); }
   }
 
-  // Зеркало серверного whitelist'а (res_ext_ok/res_path в _lib.sh). Клиентская
-  // проверка — только чтобы не гонять заведомый мусор: решает всё равно сервер.
+  // зеркало серверного whitelist'а; решает всё равно сервер
   function nameOkFor(dirKey, name) {
     if (!isRes(dirKey)) return false;
     if (!/^[A-Za-z0-9._-]+$/.test(name) || name.charAt(0) === ".") return false;
@@ -827,7 +820,7 @@
   const bkLog = (text) => { const el = $("backupLog"); if (el) el.value = text; };
   const stamp = () => new Date().toISOString().slice(0, 10);
 
-  // base64 порциями: String.fromCharCode на большом массиве кладёт стек
+  // порциями: String.fromCharCode на большом массиве кладёт стек
   function b64FromBuf(buf) {
     const b = new Uint8Array(buf);
     let s = "";
@@ -843,9 +836,7 @@
     return out;
   }
 
-  // JSON-бандл собирается на клиенте из тех же list-files/get-file, которыми
-  // живёт панель. Текстовые файлы лежат строкой, двоичные (.mrs) — объектом
-  // {encoding:"base64",data:…}, иначе через текст они бы испортились.
+  // текст — строкой, .mrs — {encoding:"base64",data:…}
   async function exportJson() {
     setBusy(true); bkLog("Собираю бандл…");
     try {
@@ -897,8 +888,7 @@
       const lines = [];
       let written = 0, skipped = 0;
       try {
-        // config.yaml — последним: он проходит через save-config с проверкой
-        // и горячим применением, и делать это стоит уже поверх новых провайдеров
+        // config.yaml последним: save-config применяет его поверх новых провайдеров
         for (const p of paths.filter((x) => x !== "config.yaml")) {
           const i = p.indexOf("/");
           const dir = i < 0 ? "" : p.slice(0, i);
@@ -961,9 +951,8 @@
     }, true);
   }
 
-  // Перечитать данные без перезагрузки страницы: сбрасываем буферы вкладок
-  // (иначе switchView вернёт устаревший текст из store) и заново тянем то,
-  // что показывает активный вид.
+  // перечитать данные без перезагрузки страницы; store сбрасываем, иначе
+  // switchView вернёт устаревший текст
   async function reloadData() {
     Object.keys(store).forEach((k) => { delete store[k]; });
     dirty = false;
@@ -1021,7 +1010,7 @@
     if (v === view) return;
     snapshot();
     view = v;
-    binMode = false;                      // applyChrome прячет binPane, состояние тоже сбрасываем
+    binMode = false;
     applyChrome(v);
     syncBinButtons();
 
@@ -1043,7 +1032,7 @@
       code.value = s.text; dirty = s.dirty; curFile = s.curFile || null;
       $("cfgPath").textContent = s.cfgPath || "";
       renderGutter(); setResPath(curFile);
-      // список обновляем до setBinMode: размер файла берётся из fileMeta
+      // список до setBinMode: размер берётся из fileMeta
       loadFileList().then(() => { if (isBin(curFile)) setBinMode(true, curFile); });
     } else {
       dirty = false; curFile = null; $("cfgPath").textContent = "";

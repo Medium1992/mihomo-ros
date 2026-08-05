@@ -13,9 +13,8 @@ fi
 
 EXT_UI="$(_yaml external-ui)"
 
-# Состояние basic auth читаем из httpd.conf, а не из env: это то, что реально
-# применил httpd. Пустой файл = BASIC_AUTH=off, дефолтный хеш = пароль admin.
-# По обоим флагам вебка показывает предупреждение.
+# Состояние auth читаем из httpd.conf — это то, что реально применил httpd.
+# Пустой файл = BASIC_AUTH=off, дефолтный хеш = пароль admin.
 AUTH_OFF=false
 AUTH_DEFAULT=false
 if [ -s /etc/httpd.conf ]; then

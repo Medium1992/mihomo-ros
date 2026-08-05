@@ -10,14 +10,12 @@ guard_json
 
 log() { echo "$@" >&2; }
 yaml_quote() { sed 's/\\/\\\\/g; s/"/\\"/g; s/.*/"&"/'; }
-# q — строковое поле: всегда в кавычках. n — числовое: печатается как есть,
-# но только если это действительно целое (иначе mihomo не разберёт конфиг,
-# т.к. поле объявлено int). Мусор молча выбрасывается.
+# q — строка в кавычках; n — число, и только если это правда целое
+# (int-поле с мусором роняет разбор конфига)
 q() { printf '%s' "${1:-}" | yaml_quote; }
 n() { case "${1:-}" in ''|*[!0-9]*) printf '' ;; *) printf '%s' "$1" ;; esac; }
 
-# Предупреждения конвертера уходят в вывод YAML-комментариями: пользователь
-# видит их в панели, а не только в логе контейнера.
+# предупреждения уходят в вывод YAML-комментариями — видно в панели
 WARN=""
 warn() { WARN="$WARN# ⚠ $1
 "; }
@@ -55,9 +53,8 @@ read_cfg() {
   local address=$(read_cfg "Address")
   local mtu=$(read_cfg "MTU")
   local keepalive=$(read_cfg "PersistentKeepalive")
-  # 3.0 разрешает диапазон ("22-30"), но mihomo держит persistent-keepalive
-  # в int и на диапазоне не разберёт конфиг вовсе. Берём нижнюю границу:
-  # keepalive чаще — это лишний трафик, зато NAT точно останется живым.
+  # 3.0 разрешает диапазон, mihomo — только int. Берём нижнюю границу:
+  # чаще keepalive = лишний трафик, зато NAT жив.
   case "$keepalive" in
     *-*)
       warn "PersistentKeepalive «$keepalive» — диапазон; взята нижняя граница ${keepalive%%-*} (mihomo принимает одно число)"
@@ -75,10 +72,8 @@ read_cfg() {
   local j1=$(read_cfg "J1");         local j2=$(read_cfg "J2");         local j3=$(read_cfg "J3")
   local itime=$(read_cfg "ITime")
 
-  # ── AmneziaWG 3.0 ──
-  # HeaderProtectionKey и ContentPaddingAddition должны совпадать с сервером,
-  # тайминги — чисто клиентские. Все значения кроме ключа могут быть как одним
-  # числом, так и диапазоном "a-b", поэтому в mihomo это строковые поля.
+  # ── AmneziaWG 3.0. Значения кроме ключа могут быть диапазоном "a-b",
+  # поэтому в mihomo это строковые поля.
   local hp_key=$(read_cfg "HeaderProtectionKey")
   local content_padding=$(read_cfg "ContentPaddingAddition")
   local rekey_after=$(read_cfg "RekeyAfterTime")
@@ -86,9 +81,7 @@ read_cfg() {
   local reject_after=$(read_cfg "RejectAfterTime")
   local keepalive_timeout=$(read_cfg "KeepaliveTimeout")
   local max_handshakes=$(read_cfg "MaxHandshakeAttempts")
-  # Ручное переопределение версии — на случай, когда 3.0 нужна без единого
-  # v3-параметра. Кладётся в .conf строкой `AwgVersion = 3` (секцию можно
-  # любую, парсер секции не различает).
+  # override для 3.0 без v3-параметров: строка AwgVersion = 3 в .conf
   local awg_version=$(read_cfg "AwgVersion")
 
   local public_key=$(read_cfg "PublicKey")
@@ -137,9 +130,7 @@ read_cfg() {
     allowed_ips_yaml='"0.0.0.0/0", "::/0"'
   fi
 
-  # ── версия протокола ──
-  # mihomo поднимает v3-реализацию только при `version: 3`; при любом другом
-  # значении работает legacy — она же обслуживает 1.5 и 2.0.
+  # v3-реализация включается только version: 3; иначе legacy (1.5/2.0)
   local awg3=0
   for v in "$hp_key" "$content_padding" "$rekey_after" "$rekey_timeout" \
            "$reject_after" "$keepalive_timeout" "$max_handshakes"; do
@@ -152,14 +143,12 @@ read_cfg() {
   esac
 
   if [ "$awg3" -eq 1 ]; then
-    # J1-J3 и ITime были только в 1.5 и вырезаны из 3.0. UAPI ядра отвергает
-    # неизвестный ключ целиком — с ними proxy просто не поднимется.
+    # J1-J3/ITime вырезаны из 3.0, а UAPI роняет peer на неизвестном ключе
     if [ -n "$j1$j2$j3$itime" ]; then
       warn "AmneziaWG 3.0: параметры J1-J3/ITime из 1.5 удалены — выброшены (иначе peer не поднимется)"
       j1=""; j2=""; j3=""; itime=""
     fi
-    # Header protection шифрует заголовки, беря S1-S4 как nonce, поэтому ядро
-    # требует каждое из них >= 12 (HeaderCipherNonceSize) и иначе падает.
+    # S1-S4 идут как nonce для header protection: ядро требует >= 12
     if [ -n "$hp_key" ]; then
       for v in s1 s2 s3 s4; do
         eval val=\$$v
@@ -227,7 +216,7 @@ read_cfg() {
 
   if [ "$has_awg_param" -eq 1 ]; then
     echo "    amnezia-wg-option:"
-    # jc/jmin/jmax/s*/h*/j*/itime в mihomo — int; i1-i5 — строки-шаблоны пакетов
+    # jc/jmin/jmax/s*/h*/j*/itime — int; i1-i5 — строки-шаблоны пакетов
     for v in jc jmin jmax s1 s2 s3 s4 h1 h2 h3 h4; do
       eval val=\$$v
       [ -n "$(n "$val")" ] && echo "      $v: $(n "$val")"
@@ -242,8 +231,7 @@ read_cfg() {
     done
     if [ "$awg3" -eq 1 ]; then
       echo "      version: 3"
-      # v3-поля в mihomo объявлены строками (значением может быть диапазон),
-      # поэтому кавычим: иначе YAML отдал бы 22-30 строкой, а 30 — числом.
+      # кавычим: иначе YAML отдал бы 22-30 строкой, а 30 — числом
       [ -n "$hp_key" ]            && printf '      header-protection-key: %s\n'   "$(q "$hp_key")"
       [ -n "$content_padding" ]   && printf '      content-padding-addition: %s\n' "$(q "$content_padding")"
       [ -n "$rekey_after" ]       && printf '      rekey-after-time: %s\n'         "$(q "$rekey_after")"

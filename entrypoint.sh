@@ -30,11 +30,8 @@ SCRIPTS_POST_DIR="$MIHOMO_DIR/scripts-post" # post-start hooks
 # basic auth вебки: логин + ГОТОВЫЙ md5-хеш ($1$...) пароля.
 # Хеш генерируется на странице «Инструменты» и кладётся в env BASIC_AUTH_HASH.
 # По умолчанию: admin / хеш пароля "admin".
-#
-# Через вебку правятся скрипты, которые контейнер выполняет от root, поэтому
-# пустой BASIC_AUTH_USER/HASH НЕ отключает авторизацию (раньше отключал молча):
-# подставляется дефолт и пишется warning. Осознанно открыть панель без пароля
-# можно только явным BASIC_AUTH=off.
+# Пустой USER/HASH даёт дефолт, а не отключение auth: выключить можно только
+# явным BASIC_AUTH=off.
 BASIC_AUTH_HASH_DEFAULT='$1$mihomors$BipEGg3TOdgaQSFfGtisO1'
 BASIC_AUTH="${BASIC_AUTH:-on}"
 BASIC_AUTH_USER="${BASIC_AUTH_USER:-admin}"
@@ -85,8 +82,7 @@ build_webroot() {
   rm -rf "$WEBROOT"
   mkdir -p "$WEBROOT"
   cp -r "$WEB_ROOT/cgi-bin" "$WEBROOT/cgi-bin"
-  # +x получают только эндпоинты. Файлы на «_» (_lib.sh, _guard.sh) — общие
-  # хелперы: их сорсят изнутри, а без +x httpd не сможет их запустить как CGI.
+  # +x только эндпоинтам; файлы на «_» — хелперы, httpd их запускать не должен
   for _f in "$WEBROOT/cgi-bin/"*; do
     case "${_f##*/}" in
       _*) chmod 0644 "$_f" 2>/dev/null || true ;;
@@ -103,9 +99,8 @@ build_webroot
 run_scripts "$SCRIPTS_DIR" pre
 
 # ---- 3. basic auth for the web UI ----------------------------
-# busybox httpd читает авторизацию из httpd.conf: строка "/:user:pass" закрывает
-# весь сайт целиком, включая /cgi-bin и статику. Файл лежит ВНЕ вебрута (иначе
-# httpd отдал бы его как обычный файл) и с правами 600 — в нём хеш пароля.
+# httpd читает auth из httpd.conf: "/:user:pass" закрывает весь сайт.
+# Файл вне вебрута и 600 — в нём хеш пароля.
 : > "$HTTPD_CONF"
 chmod 600 "$HTTPD_CONF" 2>/dev/null || true
 if [ "$BASIC_AUTH" = "off" ]; then
