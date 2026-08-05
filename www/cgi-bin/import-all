@@ -1,20 +1,14 @@
 #!/bin/sh
-# POST body = tar-архив (как отдаёт export-all) -> восстановление файлов.
+# POST body = tar от export-all -> восстановление файлов.
 # Returns: { "ok": bool, "output": "...", "written": N, "skipped": N }
-#
-# Безопасность распаковки (tar-slip):
-#   1) сначала tar -t: архив с абсолютными путями или «..» отвергается целиком;
-#   2) распаковка ВСЕГДА в отдельный каталог в tmpfs, не в /etc/mihomo;
-#   3) на место копируем не то, что лежит в архиве, а то, что нашли по СВОИМ
-#      путям (res_dir/res_ext_ok). Имена из архива в путь назначения не
-#      подставляются — только basename, прошедший whitelist.
-# config.yaml применяется последним и только если проходит mihomo -t.
+# Против tar-slip: tar -t отвергает «..»/абсолютные пути, распаковка в tmpfs,
+# на место копируется только basename, прошедший res_path.
+# config.yaml — последним и только если проходит mihomo -t.
 . /www/cgi-bin/_lib.sh
 . /www/cgi-bin/_guard.sh
 guard_json
 
-MAX_BYTES=8388608          # 8 MiB — бэкап конфигов столько не занимает,
-                           # а /dev/shm на роутере маленький
+MAX_BYTES=8388608          # /dev/shm на роутере маленький
 LEN="${CONTENT_LENGTH:-0}"
 if [ "$LEN" -gt "$MAX_BYTES" ] 2>/dev/null; then
   send_json "413 Payload Too Large"
@@ -40,7 +34,7 @@ if [ -z "$LIST" ]; then
   printf '{"ok":false,"output":"не похоже на tar-архив (или он пуст)"}'
   exit 0
 fi
-# путь с «..» или абсолютный = попытка вылезти из каталога распаковки
+# «..» или абсолютный путь = попытка вылезти из каталога распаковки
 BAD=0
 printf '%s\n' "$LIST" | grep -q '^/'   && BAD=1
 printf '%s\n' "$LIST" | grep -q '\.\.' && BAD=1
@@ -54,7 +48,6 @@ tar -xf "$T/in.tar" -C "$T/x" 2>/dev/null || {
   send_json "200 OK"
   printf '{"ok":false,"output":"не удалось распаковать архив"}'; exit 0; }
 
-# export-all пишет пути как ./config.yaml, поэтому корень распаковки — просто $T/x
 SRC="$T/x"
 
 WRITTEN=0
@@ -63,7 +56,6 @@ NOTES=""
 note() { NOTES="$NOTES$1
 "; }
 
-# ── файловые ресурсы ──
 for key in scripts scripts-post proxy-providers provider-rules; do
   d="$(res_dir "$key")" || continue
   [ -d "$SRC/$key" ] || continue
@@ -81,7 +73,6 @@ for key in scripts scripts-post proxy-providers provider-rules; do
   done
 done
 
-# ── config.yaml — последним, только валидный ──
 CFG_MSG=""
 if [ -f "$SRC/config.yaml" ]; then
   OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$SRC/config.yaml" 2>&1)"

@@ -3,11 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Страховка на случай появления XSS: скрипты/стили только свои, никаких
-     внешних загрузок и inline-обработчиков. busybox httpd своих заголовков не
-     умеет (статика идёт напрямую с диска), поэтому политика задаётся мета-тегом.
-     frame-ancestors в мета-теге по спеке игнорируется — от встраивания в чужую
-     страницу защищает frame-buster в app.js. -->
+<!-- CSP мета-тегом: busybox httpd своих заголовков не умеет.
+     frame-ancestors тут игнорируется — за это отвечает frame-buster в app.js. -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="same-origin">
@@ -55,7 +52,7 @@
 
   <!-- main -->
   <main class="main">
-    <!-- предупреждение про пароль вебки; текст ставит app.js по флагам /cgi-bin/status -->
+    <!-- текст ставит app.js по флагам /cgi-bin/status -->
     <div class="authwarn" id="authWarn" hidden></div>
 
     <header class="topbar">
@@ -100,7 +97,7 @@
           <button class="btn tiny" id="upBtn"
                   title="Взять файл с диска: текстовый откроется в редакторе, .mrs зальётся как есть">⭱&nbsp;загрузить</button>
         </div>
-        <!-- один невидимый input на все импорты; на что он работает, решает app.js -->
+        <!-- один input на все импорты -->
         <input type="file" id="filePick" hidden>
         <ul class="files-list" id="filesList"></ul>
         <div class="files-hint" id="filesHint"></div>
@@ -128,8 +125,7 @@
           </div>
         </section>
 
-        <!-- вместо редактора для двоичных файлов (.mrs): показывать нечего, но
-             скачать / заменить / удалить нужно -->
+        <!-- вместо редактора для .mrs -->
         <section class="bin-pane" id="binPane" hidden>
           <div class="bin-card">
             <div class="bin-ico">⬢</div>

@@ -1,14 +1,8 @@
 #!/bin/sh
-# POST -> tar-архив со всеми пользовательскими файлами (бэкап проекта):
-#   config.yaml, scripts/, scripts-post/, proxy-providers/, provider-rules/
-#
-# Собираем не «как есть», а через тот же whitelist, что и у import-all
-# (res_dir/res_ext_ok): в архив попадает ровно то, что импорт умеет принять.
-# Побочный плюс — в бэкап не уезжает рантайм-мусор: cache.db, geoip.metadb,
-# .config.bak, config.yaml.default.
-#
-# ВНИМАНИЕ: архив содержит секреты (secret ядра, пароли/ключи прокси) открытым
-# текстом — поэтому no-store и никакого кеша.
+# POST -> tar с config.yaml и 4 каталогами (бэкап проекта).
+# Отбор через тот же whitelist, что у import-all: что экспортнули, то и примем;
+# рантайм-мусор (cache.db, geoip.metadb, .config.bak) не попадает.
+# Архив содержит секреты открытым текстом -> no-store.
 . /www/cgi-bin/_lib.sh
 . /www/cgi-bin/_guard.sh
 guard_text
@@ -31,7 +25,7 @@ for key in scripts scripts-post proxy-providers provider-rules; do
     res_ext_ok "$key" "$bn" || continue
     cp "$f" "$STAGE/$key/$bn"
   done
-  rmdir "$STAGE/$key" 2>/dev/null || true   # пустую папку в архив не тащим
+  rmdir "$STAGE/$key" 2>/dev/null || true   # пустую папку не тащим
 done
 
 printf 'Status: 200 OK\r\n'
