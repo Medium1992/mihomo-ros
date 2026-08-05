@@ -1,7 +1,9 @@
 #!/bin/sh
 # POST ?dir=<key>&name=<file> -> enable/disable by toggling .disabled suffix.
 # Only meaningful for scripts (entrypoint skips *.sh.disabled).
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 dir="$(query_get dir)"
 case "$dir" in

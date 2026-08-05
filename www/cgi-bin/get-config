@@ -1,6 +1,6 @@
 #!/bin/sh
 # GET current config.yaml as plain text
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
 
 if [ -f "$CONFIG" ]; then
   send_text "200 OK"

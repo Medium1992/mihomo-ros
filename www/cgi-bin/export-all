@@ -1,0 +1,42 @@
+#!/bin/sh
+# POST -> tar-архив со всеми пользовательскими файлами (бэкап проекта):
+#   config.yaml, scripts/, scripts-post/, proxy-providers/, provider-rules/
+#
+# Собираем не «как есть», а через тот же whitelist, что и у import-all
+# (res_dir/res_ext_ok): в архив попадает ровно то, что импорт умеет принять.
+# Побочный плюс — в бэкап не уезжает рантайм-мусор: cache.db, geoip.metadb,
+# .config.bak, config.yaml.default.
+#
+# ВНИМАНИЕ: архив содержит секреты (secret ядра, пароли/ключи прокси) открытым
+# текстом — поэтому no-store и никакого кеша.
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_text
+
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+STAGE="$TMPDIR_/.exp.$$"
+rm -rf "$STAGE"; mkdir -p "$STAGE" || {
+  send_text "500 Internal Server Error"; echo "no writable tmpdir"; exit 0; }
+trap 'rm -rf "$STAGE"' EXIT
+
+[ -f "$CONFIG" ] && cp "$CONFIG" "$STAGE/config.yaml"
+
+for key in scripts scripts-post proxy-providers provider-rules; do
+  d="$(res_dir "$key")" || continue
+  [ -d "$d" ] || continue
+  mkdir -p "$STAGE/$key"
+  for f in "$d"/*; do
+    [ -f "$f" ] || continue
+    bn="${f##*/}"
+    res_ext_ok "$key" "$bn" || continue
+    cp "$f" "$STAGE/$key/$bn"
+  done
+  rmdir "$STAGE/$key" 2>/dev/null || true   # пустую папку в архив не тащим
+done
+
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: application/x-tar\r\n'
+printf 'Content-Disposition: attachment; filename="mihomo-ros-backup.tar"\r\n'
+printf 'Cache-Control: no-store\r\n'
+printf '\r\n'
+tar -C "$STAGE" -cf - . 2>/dev/null

@@ -1,6 +1,8 @@
 #!/bin/sh
 # POST ?dir=<key>&name=<file> -> delete
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 path="$(res_path "$(query_get dir)" "$(query_get name)")" || {
   send_json "400 Bad Request"; printf '{"ok":false,"output":"bad request"}'; exit 0; }

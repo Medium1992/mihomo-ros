@@ -1,7 +1,9 @@
 #!/bin/sh
 # POST ?dir=<key>&name=<file>  body=content -> create/overwrite.
 # scripts get +x; provider files are plain data.
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 dir="$(query_get dir)"
 path="$(res_path "$dir" "$(query_get name)")" || {

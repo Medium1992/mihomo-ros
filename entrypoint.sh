@@ -30,8 +30,17 @@ SCRIPTS_POST_DIR="$MIHOMO_DIR/scripts-post" # post-start hooks
 # basic auth вебки: логин + ГОТОВЫЙ md5-хеш ($1$...) пароля.
 # Хеш генерируется на странице «Инструменты» и кладётся в env BASIC_AUTH_HASH.
 # По умолчанию: admin / хеш пароля "admin".
+#
+# Через вебку правятся скрипты, которые контейнер выполняет от root, поэтому
+# пустой BASIC_AUTH_USER/HASH НЕ отключает авторизацию (раньше отключал молча):
+# подставляется дефолт и пишется warning. Осознанно открыть панель без пароля
+# можно только явным BASIC_AUTH=off.
+BASIC_AUTH_HASH_DEFAULT='$1$mihomors$BipEGg3TOdgaQSFfGtisO1'
+BASIC_AUTH="${BASIC_AUTH:-on}"
 BASIC_AUTH_USER="${BASIC_AUTH_USER:-admin}"
-BASIC_AUTH_HASH="${BASIC_AUTH_HASH:-\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1}"
+BASIC_AUTH_HASH="${BASIC_AUTH_HASH:-$BASIC_AUTH_HASH_DEFAULT}"
+[ -n "$BASIC_AUTH_USER" ] || BASIC_AUTH_USER=admin
+[ -n "$BASIC_AUTH_HASH" ] || BASIC_AUTH_HASH="$BASIC_AUTH_HASH_DEFAULT"
 
 # ---- 1. folders + seed config --------------------------------
 mkdir -p "$SCRIPTS_DIR" "$SCRIPTS_POST_DIR" \
@@ -76,7 +85,14 @@ build_webroot() {
   rm -rf "$WEBROOT"
   mkdir -p "$WEBROOT"
   cp -r "$WEB_ROOT/cgi-bin" "$WEBROOT/cgi-bin"
-  chmod +x "$WEBROOT/cgi-bin/"* 2>/dev/null || true
+  # +x получают только эндпоинты. Файлы на «_» (_lib.sh, _guard.sh) — общие
+  # хелперы: их сорсят изнутри, а без +x httpd не сможет их запустить как CGI.
+  for _f in "$WEBROOT/cgi-bin/"*; do
+    case "${_f##*/}" in
+      _*) chmod 0644 "$_f" 2>/dev/null || true ;;
+      *)  chmod 0755 "$_f" 2>/dev/null || true ;;
+    esac
+  done
   for item in index.html assets; do
     [ -e "$WEB_ROOT/$item" ] && ln -sfn "$WEB_ROOT/$item" "$WEBROOT/$item"
   done
@@ -87,14 +103,21 @@ build_webroot
 run_scripts "$SCRIPTS_DIR" pre
 
 # ---- 3. basic auth for the web UI ----------------------------
-# busybox httpd reads auth from httpd.conf: "/:user:pass" guards the whole site.
+# busybox httpd читает авторизацию из httpd.conf: строка "/:user:pass" закрывает
+# весь сайт целиком, включая /cgi-bin и статику. Файл лежит ВНЕ вебрута (иначе
+# httpd отдал бы его как обычный файл) и с правами 600 — в нём хеш пароля.
 : > "$HTTPD_CONF"
-if [ -n "$BASIC_AUTH_USER" ] && [ -n "$BASIC_AUTH_HASH" ]; then
+chmod 600 "$HTTPD_CONF" 2>/dev/null || true
+if [ "$BASIC_AUTH" = "off" ]; then
+  log "WARNING: basic auth DISABLED by BASIC_AUTH=off — вебка (и правка root-скриптов) открыта всем в сети"
+else
   # хеш уже готов ($1$...) — пишем как есть, без openssl
   echo "/:$BASIC_AUTH_USER:$BASIC_AUTH_HASH" >> "$HTTPD_CONF"
   log "basic auth enabled for user '$BASIC_AUTH_USER' (hash)"
-else
-  log "basic auth DISABLED (set BASIC_AUTH_USER / BASIC_AUTH_HASH)"
+  if [ "$BASIC_AUTH_HASH" = "$BASIC_AUTH_HASH_DEFAULT" ]; then
+    log "WARNING: используется ДЕФОЛТНЫЙ пароль вебки (admin) — смени его:"
+    log "WARNING:   Инструменты → Хеш-пароль, затем env BASIC_AUTH_HASH"
+  fi
 fi
 
 # ---- fast shutdown ------------------------------------------

@@ -1,0 +1,112 @@
+#!/bin/sh
+# POST body = tar-архив (как отдаёт export-all) -> восстановление файлов.
+# Returns: { "ok": bool, "output": "...", "written": N, "skipped": N }
+#
+# Безопасность распаковки (tar-slip):
+#   1) сначала tar -t: архив с абсолютными путями или «..» отвергается целиком;
+#   2) распаковка ВСЕГДА в отдельный каталог в tmpfs, не в /etc/mihomo;
+#   3) на место копируем не то, что лежит в архиве, а то, что нашли по СВОИМ
+#      путям (res_dir/res_ext_ok). Имена из архива в путь назначения не
+#      подставляются — только basename, прошедший whitelist.
+# config.yaml применяется последним и только если проходит mihomo -t.
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
+
+MAX_BYTES=8388608          # 8 MiB — бэкап конфигов столько не занимает,
+                           # а /dev/shm на роутере маленький
+LEN="${CONTENT_LENGTH:-0}"
+if [ "$LEN" -gt "$MAX_BYTES" ] 2>/dev/null; then
+  send_json "413 Payload Too Large"
+  printf '{"ok":false,"output":"архив больше %s байт"}' "$MAX_BYTES"
+  exit 0
+fi
+
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+T="$TMPDIR_/.imp.$$"
+rm -rf "$T"; mkdir -p "$T/x" || {
+  send_json "500 Internal Server Error"
+  printf '{"ok":false,"output":"no writable tmpdir"}'; exit 0; }
+trap 'rm -rf "$T"' EXIT
+
+read_body > "$T/in.tar"
+if [ ! -s "$T/in.tar" ]; then
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"пустой архив"}'; exit 0
+fi
+
+LIST="$(tar -tf "$T/in.tar" 2>/dev/null)"
+if [ -z "$LIST" ]; then
+  send_json "200 OK"
+  printf '{"ok":false,"output":"не похоже на tar-архив (или он пуст)"}'
+  exit 0
+fi
+# путь с «..» или абсолютный = попытка вылезти из каталога распаковки
+BAD=0
+printf '%s\n' "$LIST" | grep -q '^/'   && BAD=1
+printf '%s\n' "$LIST" | grep -q '\.\.' && BAD=1
+if [ "$BAD" = 1 ]; then
+  send_json "400 Bad Request"
+  printf '{"ok":false,"output":"архив отклонён: в нём есть абсолютные пути или .."}'
+  exit 0
+fi
+
+tar -xf "$T/in.tar" -C "$T/x" 2>/dev/null || {
+  send_json "200 OK"
+  printf '{"ok":false,"output":"не удалось распаковать архив"}'; exit 0; }
+
+# export-all пишет пути как ./config.yaml, поэтому корень распаковки — просто $T/x
+SRC="$T/x"
+
+WRITTEN=0
+SKIPPED=0
+NOTES=""
+note() { NOTES="$NOTES$1
+"; }
+
+# ── файловые ресурсы ──
+for key in scripts scripts-post proxy-providers provider-rules; do
+  d="$(res_dir "$key")" || continue
+  [ -d "$SRC/$key" ] || continue
+  mkdir -p "$d"
+  for f in "$SRC/$key"/*; do
+    [ -f "$f" ] || continue
+    bn="${f##*/}"
+    if ! p="$(res_path "$key" "$bn")"; then
+      SKIPPED=$((SKIPPED + 1)); note "пропущен $key/$bn (недопустимое имя или расширение)"
+      continue
+    fi
+    cp "$f" "$p" || { SKIPPED=$((SKIPPED + 1)); note "не записан $key/$bn"; continue; }
+    case "$key" in scripts|scripts-post) chmod +x "$p" 2>/dev/null || true ;; esac
+    WRITTEN=$((WRITTEN + 1))
+  done
+done
+
+# ── config.yaml — последним, только валидный ──
+CFG_MSG=""
+if [ -f "$SRC/config.yaml" ]; then
+  OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$SRC/config.yaml" 2>&1)"
+  if [ $? -ne 0 ]; then
+    SKIPPED=$((SKIPPED + 1))
+    CFG_MSG="config.yaml из архива НЕ применён — не проходит проверку: $(printf '%s' "$OUT" | head -n3 | tr '\n' ' ')"
+  else
+    [ -f "$CONFIG" ] && cp "$CONFIG" "$MIHOMO_DIR/.config.bak"
+    cp "$SRC/config.yaml" "$MIHOMO_DIR/.config.new" \
+      && mv -f "$MIHOMO_DIR/.config.new" "$CONFIG"
+    WRITTEN=$((WRITTEN + 1))
+    if api PUT "/configs?force=false" "{\"path\":\"$CONFIG\"}" >/dev/null 2>&1; then
+      CFG_MSG="config.yaml восстановлен и применён"
+    else
+      CFG_MSG="config.yaml восстановлен, но горячее применение не удалось — нажмите «Применить»"
+    fi
+  fi
+fi
+
+MSG="Восстановлено файлов: $WRITTEN, пропущено: $SKIPPED"
+[ -n "$CFG_MSG" ] && MSG="$MSG
+$CFG_MSG"
+[ -n "$NOTES" ] && MSG="$MSG
+$NOTES"
+
+send_json "200 OK"
+printf '{"ok":true,"written":%s,"skipped":%s,"output":"%s"}' \
+  "$WRITTEN" "$SKIPPED" "$(printf '%s' "$MSG" | json_escape)"

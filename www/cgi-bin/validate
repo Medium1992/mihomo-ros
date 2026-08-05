@@ -2,7 +2,9 @@
 # POST raw YAML body -> validate with `mihomo -t` without applying.
 # Candidate lives in tmpfs (/dev/shm) — никаких записей на флеш при проверке.
 # Returns: { "ok": bool, "output": "..." }
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
 CAND="$TMPDIR_/.cfg-check.$$"

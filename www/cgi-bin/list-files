@@ -1,7 +1,7 @@
 #!/bin/sh
 # GET ?dir=<key> -> JSON array of files in that resource dir:
 # [{ "file":"a.sh", "name":"a.sh", "enabled":true, "size":123 }, ...]
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
 
 dir="$(query_get dir)"
 d="$(res_dir "$dir")" || { send_json "400 Bad Request"; printf '[]'; exit 0; }

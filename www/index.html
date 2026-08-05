@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Страховка на случай появления XSS: скрипты/стили только свои, никаких
+     внешних загрузок и inline-обработчиков. busybox httpd своих заголовков не
+     умеет (статика идёт напрямую с диска), поэтому политика задаётся мета-тегом.
+     frame-ancestors в мета-теге по спеке игнорируется — от встраивания в чужую
+     страницу защищает frame-buster в app.js. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="same-origin">
 <title>mihomo-ros</title>
 <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
 <link rel="stylesheet" href="/assets/style.css">
@@ -47,6 +55,9 @@
 
   <!-- main -->
   <main class="main">
+    <!-- предупреждение про пароль вебки; текст ставит app.js по флагам /cgi-bin/status -->
+    <div class="authwarn" id="authWarn" hidden></div>
+
     <header class="topbar">
       <div class="topbar-title">
         <h1 id="viewTitle">config.yaml</h1>
@@ -63,7 +74,6 @@
       <div class="topbar-actions" id="actionsScript" hidden>
         <button class="btn ghost"  id="scrReloadBtn" title="Перечитать с диска">↺ Сбросить</button>
         <button class="btn"        id="scrCheckBtn"  title="Проверить синтаксис (sh -n)">Проверить</button>
-        <button class="btn"        id="scrRunBtn"    title="Запустить сейчас">▶ Запустить</button>
         <button class="btn"        id="scrToggleBtn" title="Включить/выключить">⏻ Вкл/выкл</button>
         <button class="btn danger" id="scrDeleteBtn">🗑 Удалить</button>
         <button class="btn primary" id="scrSaveBtn">Сохранить</button>
@@ -82,8 +92,16 @@
       <aside class="files" id="filesPanel" hidden>
         <div class="files-head">
           <span id="filesTitle">Файлы</span>
-          <button class="btn tiny" id="newBtn">＋ новый</button>
         </div>
+        <div class="files-tools" id="filesTools">
+          <button class="btn tiny primary" id="newBtn">＋&nbsp;создать файл</button>
+          <button class="btn tiny" id="dlBtn"
+                  title="Скачать открытый файл на диск">⭳&nbsp;скачать</button>
+          <button class="btn tiny" id="upBtn"
+                  title="Взять файл с диска: текстовый откроется в редакторе, .mrs зальётся как есть">⭱&nbsp;загрузить</button>
+        </div>
+        <!-- один невидимый input на все импорты; на что он работает, решает app.js -->
+        <input type="file" id="filePick" hidden>
         <ul class="files-list" id="filesList"></ul>
         <div class="files-hint" id="filesHint"></div>
       </aside>
@@ -107,6 +125,21 @@
               <textarea id="code" spellcheck="false" autocomplete="off"
                         autocapitalize="off" autocorrect="off" wrap="off"></textarea>
             </div>
+          </div>
+        </section>
+
+        <!-- вместо редактора для двоичных файлов (.mrs): показывать нечего, но
+             скачать / заменить / удалить нужно -->
+        <section class="bin-pane" id="binPane" hidden>
+          <div class="bin-card">
+            <div class="bin-ico">⬢</div>
+            <h3 id="binName">—</h3>
+            <p class="bin-meta" id="binSize"></p>
+            <p>Скомпилированный набор правил mihomo (<code>.mrs</code>) — двоичный файл,
+               в редакторе его показать нельзя. Доступны <b>⭳ скачать</b>,
+               <b>⭱ загрузить</b> (заменить файлом с диска) и <b>🗑 удалить</b>.</p>
+            <p class="bin-meta">Путь для конфига появится в строке над этой панелью —
+               его же кладите в <code>path:</code> у <code>rule-providers</code>.</p>
           </div>
         </section>
 
@@ -177,6 +210,34 @@
             <div class="tool-out-block">
               <textarea id="ovpnOut" class="tool-area" readonly placeholder="результат…"></textarea>
               <button class="btn" id="ovpnCopy">Копировать</button>
+            </div>
+          </div>
+
+          <div class="tool-card" id="toolBackup" hidden>
+            <h3>Бэкап и восстановление</h3>
+            <p>Выгружает и загружает всё сразу: <code>config.yaml</code>, pre/post-скрипты,
+               <code>proxy-providers/</code>, <code>provider-rules/</code>.</p>
+            <p class="tool-note">⚠ Бэкап содержит секреты открытым текстом:
+               <code>secret</code> ядра, пароли и ключи прокси. Храните его так же
+               аккуратно, как сам конфиг.</p>
+
+            <label>tar-архив — всё, включая бинарные <code>.mrs</code></label>
+            <div class="tool-row">
+              <button class="btn primary" id="tarExport">⭳ Скачать .tar</button>
+              <button class="btn" id="tarImport">⭱ Восстановить из .tar</button>
+            </div>
+
+            <label>JSON-бандл — один текстовый файл, удобно смотреть и править</label>
+            <div class="tool-row">
+              <button class="btn primary" id="jsonExport">⭳ Скачать .json</button>
+              <button class="btn" id="jsonImport">⭱ Восстановить из .json</button>
+            </div>
+            <p class="tool-note">Двоичные <code>.mrs</code> тоже входят — они лежат
+               в бандле в base64.</p>
+
+            <label for="backupLog">Журнал</label>
+            <div class="tool-out-block">
+              <textarea id="backupLog" class="tool-area" readonly placeholder="здесь появится результат…"></textarea>
             </div>
           </div>
 

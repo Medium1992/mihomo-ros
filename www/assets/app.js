@@ -2,6 +2,18 @@
 (function () {
   "use strict";
 
+  // frame-buster. Панель нельзя встраивать в чужую страницу: basic auth
+  // браузер приложит сам, и клик по невидимому iframe сработает как клик по
+  // нашим кнопкам (clickjacking). CSRF-guard тут не помогает — Referer у
+  // такого запроса свой же. Заголовок X-Frame-Options busybox httpd не умеет,
+  // а frame-ancestors в мета-теге CSP игнорируется, поэтому проверяем в JS.
+  if (window.top !== window.self) {
+    document.documentElement.textContent =
+      "mihomo-ros: страница не может быть открыта во фрейме";
+    try { window.top.location = window.self.location; } catch (_) {}
+    return;
+  }
+
   const $ = (id) => document.getElementById(id);
   const code = $("code");
   const gutter = $("gutter");
@@ -69,12 +81,14 @@
   const RES = {
     "scripts": {
       kind: "sh", title: "Pre-скрипты", dir: "scripts",
-      hint: "<code>/etc/mihomo/scripts/</code> · выполняются <b>до</b> старта mihomo",
+      hint: "<code>/etc/mihomo/scripts/</code> · выполняются <b>до</b> старта mihomo"
+          + " · после правок нужен рестарт контейнера",
       tpl: "#!/bin/sh\n# pre-start hook\n\n", newName: "10-hook.sh",
     },
     "scripts-post": {
       kind: "sh", title: "Post-скрипты", dir: "scripts-post",
-      hint: "<code>/etc/mihomo/scripts-post/</code> · выполняются <b>после</b> старта mihomo",
+      hint: "<code>/etc/mihomo/scripts-post/</code> · выполняются <b>после</b> старта mihomo"
+          + " · после правок нужен рестарт контейнера",
       tpl: "#!/bin/sh\n# post-start hook\n\n", newName: "10-hook.sh",
     },
     "proxy-providers": {
@@ -85,7 +99,8 @@
     },
     "provider-rules": {
       kind: "prov", title: "provider-rules", dir: "provider-rules",
-      hint: "<code>/etc/mihomo/provider-rules/</code> · файлы провайдеров правил",
+      hint: "<code>/etc/mihomo/provider-rules/</code> · файлы провайдеров правил"
+          + " · готовые <code>.mrs</code> — кнопкой «⭱ загрузить»",
       doc: "https://wiki.metacubex.one/ru/config/rule-providers/content/",
       tpl: "payload:\n  - \n", newName: "my-rules.yaml",
     },
@@ -96,6 +111,14 @@
   let busy = false;
   let curFile = null;       // selected file (resource views)
   const store = {};         // per-view buffers
+
+  // .mrs — скомпилированный набор правил mihomo, двоичный. Редактировать его
+  // нечем, но он полноправный файл provider-rules: его нужно уметь залить,
+  // скачать и удалить. Поэтому для него редактор подменяется панелью-заглушкой,
+  // а чтение/запись идут байтами, а не текстом.
+  const isBin = (name) => /\.mrs$/i.test(name || "");
+  let binMode = false;
+  let fileMeta = {};        // file -> {size, enabled} из последнего list-files
 
   // yaml: ОДИН мастер-текст; редактор показывает либо весь конфиг, либо срез
   // секции (по top-level ключу upstream). Правки среза вклеиваются обратно.
@@ -255,8 +278,14 @@
   }
   function setBusy(b) {
     busy = b;
-    document.querySelectorAll(".topbar-actions .btn, .files .btn")
+    document.querySelectorAll(".topbar-actions .btn, .files .btn, .tool-card .btn")
       .forEach((el) => (el.disabled = b));
+    if (!b) syncBinButtons();   // разблокировка не должна включать «Сохранить» у .mrs
+  }
+  // в бинарном режиме проверять и сохранять нечего
+  function syncBinButtons() {
+    $("prvCheckBtn").disabled = binMode;
+    $("prvSaveBtn").disabled = binMode;
   }
   async function jsonFetch(url, opts) {
     const r = await fetch(url, Object.assign({ cache: "no-store" }, opts));
@@ -271,9 +300,33 @@
   const txtPost = (body) => ({ method: "POST", headers: { "Content-Type": "text/plain" }, body });
 
   /* ── status badge ───────────────────────────────────────── */
+  // Панель правит скрипты, которые контейнер выполняет от root, поэтому про
+  // дефолтный пароль и выключенный basic auth говорим прямо в интерфейсе.
+  // Флаги приходят из /cgi-bin/status (он читает реальный /etc/httpd.conf).
+  function renderAuthWarn(j) {
+    const bar = $("authWarn");
+    if (!bar) return;
+    if (j && j.authOff) {
+      bar.className = "authwarn";
+      bar.textContent = "Вебка открыта БЕЗ пароля (BASIC_AUTH=off). "
+        + "Любой в сети роутера может править конфиг и скрипты, "
+        + "которые выполняются от root.";
+      bar.hidden = false;
+    } else if (j && j.authDefault) {
+      bar.className = "authwarn warn";
+      bar.textContent = "Используется дефолтный пароль вебки (admin). "
+        + "Смени его: Инструменты → Хеш-пароль, полученный хеш — в env "
+        + "BASIC_AUTH_HASH, затем рестарт контейнера.";
+      bar.hidden = false;
+    } else {
+      bar.hidden = true;
+    }
+  }
+
   async function refreshStatus() {
     try {
       const j = await jsonFetch("/cgi-bin/status");
+      renderAuthWarn(j);
       $("statusDot").className = "dot " + (j.running ? "up" : "down");
       $("statusText").textContent = j.running ? "ядро запущено" : "ядро недоступно";
       $("version").textContent = j.version || "—";
@@ -488,6 +541,8 @@
   async function loadFileList() {
     let list = [];
     try { list = await jsonFetch("/cgi-bin/list-files?" + qs()); } catch (_) {}
+    fileMeta = {};
+    list.forEach((it) => { fileMeta[it.file] = { size: it.size, enabled: it.enabled }; });
     const ul = $("filesList"); ul.innerHTML = "";
     if (!list.length) ul.innerHTML = '<li class="files-empty">пусто · создай файл</li>';
     list.forEach((it) => {
@@ -506,9 +561,35 @@
       .forEach((li) => li.classList.toggle("sel", li.dataset.file === curFile));
   }
 
+  // переключение «редактор ↔ панель двоичного файла»
+  function setBinMode(on, file) {
+    binMode = on;
+    $("editorWrap").hidden = on;
+    $("binPane").hidden = !on;
+    if (on) {
+      const sz = (fileMeta[file] || {}).size;
+      $("binName").textContent = file;
+      $("binSize").textContent = sz != null ? fmtSize(sz) : "размер неизвестен";
+    }
+    syncBinButtons();
+  }
+  const fmtSize = (n) => n < 1024 ? n + " Б"
+    : n < 1024 * 1024 ? (n / 1024).toFixed(1) + " КиБ"
+    : (n / 1048576).toFixed(2) + " МиБ";
+
   async function openFile(file) {
     if (dirty && curFile && curFile !== file &&
         !confirm("Изменения не сохранены. Открыть другой файл?")) return;
+    if (isBin(file)) {
+      curFile = file; dirty = false;
+      setBinMode(true, file);
+      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + file;
+      setResPath(file); markSel();
+      setConsole("Двоичный файл", file + " — редактирование недоступно, "
+        + "доступны скачивание, замена и удаление.", "muted");
+      return;
+    }
+    setBinMode(false);
     try {
       const r = await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)), { cache: "no-store" });
       code.value = await r.text();
@@ -544,18 +625,6 @@
     finally { setBusy(false); }
   }
 
-  async function runFile() {
-    if (busy || !curFile) { if (!curFile) showToast("Выбери скрипт", "err"); return; }
-    if (dirty && !confirm("Скрипт не сохранён — запустить версию с диска?")) return;
-    setBusy(true); setConsole("Запуск…", "Выполняю " + curFile + " …", "muted");
-    try {
-      const j = await jsonFetch("/cgi-bin/run-file?" + qs("&name=" + encodeURIComponent(curFile)), { method: "POST" });
-      setConsole(j.ok ? "Готово ✓" : "Скрипт завершился с ошибкой", j.output || "(нет вывода)", j.ok ? "ok" : "err");
-      showToast(j.ok ? "Выполнено ✓" : "Ошибка ✗", j.ok ? "ok" : "err");
-    } catch (e) { setConsole("Ошибка", String(e), "err"); }
-    finally { setBusy(false); }
-  }
-
   async function toggleFile() {
     if (busy || !curFile) { if (!curFile) showToast("Выбери скрипт", "err"); return; }
     setBusy(true);
@@ -580,6 +649,7 @@
       const j = await jsonFetch("/cgi-bin/delete-file?" + qs("&name=" + encodeURIComponent(curFile)), { method: "POST" });
       if (j.ok) {
         showToast("Удалён", "ok");
+        setBinMode(false);
         curFile = null; code.value = ""; dirty = false; renderGutter();
         $("cfgPath").textContent = ""; setResPath(null);
         setConsole("Консоль", "Файл удалён.", "muted"); loadFileList();
@@ -594,7 +664,16 @@
     if (!name) return;
     name = name.trim();
     if (!/^[A-Za-z0-9._-]+$/.test(name)) { showToast("Недопустимое имя", "err"); return; }
+    if (isBin(name)) {
+      // .mrs компилирует mihomo, руками его не написать
+      setConsole("Так не получится", ".mrs — двоичный формат, вручную его не создать. "
+        + "Готовый файл залей кнопкой «⭱ загрузить», либо укажи в конфиге "
+        + "rule-provider с format: mrs и url — mihomo скачает его сам.", "err");
+      showToast(".mrs нужно загрузить файлом", "err");
+      return;
+    }
     if (r.kind === "sh" && !/\.sh$/.test(name)) name += ".sh";
+    setBinMode(false);
     curFile = name;
     code.value = r.tpl;
     dirty = true; renderGutter();
@@ -614,6 +693,292 @@
     }
   }
 
+  /* ════════════════ импорт / экспорт ════════════════ */
+  // Отдельные файлы делаются целиком на клиенте: скачивание — Blob из того,
+  // что уже пришло по get-config/get-file, загрузка — FileReader в редактор,
+  // дальше штатные «Проверить»/«Сохранить». Своих эндпоинтов для этого нет,
+  // а значит нет и новой поверхности атаки.
+
+  function saveBlob(name, blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  const saveText = (name, text, mime) =>
+    saveBlob(name, new Blob([text], { type: (mime || "text/plain") + ";charset=utf-8" }));
+
+  // один <input type="file"> на все импорты: перед клике вешаем обработчик
+  function pickFile(accept, onText, asBinary) {
+    const inp = $("filePick");
+    inp.accept = accept || "";
+    inp.value = "";                       // иначе повторный выбор того же файла молчит
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0];
+      if (!f) return;
+      const fr = new FileReader();
+      fr.onload = () => onText(fr.result, f.name);
+      fr.onerror = () => showToast("Не удалось прочитать файл", "err");
+      if (asBinary) fr.readAsArrayBuffer(f); else fr.readAsText(f);
+    };
+    inp.click();
+  }
+
+  // ── один файл ──
+  function downloadCurrent() {
+    if (view === "yaml") {
+      // в YAML-виде редактор может показывать срез секции — на диск отдаём
+      // мастер-текст целиком, иначе скачался бы кусок конфига
+      saveText("config.yaml", cfgFull, "text/yaml");
+      showToast("config.yaml скачан", "ok");
+      return;
+    }
+    if (!isRes(view)) { showToast("Тут нечего скачивать", "err"); return; }
+    if (!curFile) { showToast("Сначала выбери файл", "err"); return; }
+    if (binMode) { downloadBinary(curFile); return; }
+    saveText(curFile, code.value);
+    showToast(curFile + " скачан", "ok");
+  }
+
+  // .mrs тянем блобом: через .text() двоичный файл испортился бы
+  async function downloadBinary(file) {
+    setBusy(true);
+    try {
+      const r = await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)),
+        { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      saveBlob(file, await r.blob());
+      showToast(file + " скачан", "ok");
+    } catch (e) { setConsole("Ошибка", String(e), "err"); showToast("Не скачалось", "err"); }
+    finally { setBusy(false); }
+  }
+
+  function uploadCurrent() {
+    if (view === "yaml") {
+      pickFile(".yaml,.yml,text/*", (text) => {
+        if (dirty && !confirm("Изменения не сохранены. Заменить содержимое редактора файлом с диска?")) return;
+        cfgFull = String(text).replace(/\r\n/g, "\n").replace(/[ \t\r\n]+$/, "") + "\n";
+        dirty = true;
+        buildSectionList(); selectWhole();
+        setConsole("Файл загружен", "Содержимое подставлено в редактор, но НЕ сохранено. "
+          + "Нажми «Проверить», затем «Применить».", "muted");
+        showToast("Загружено в редактор", "ok");
+      });
+      return;
+    }
+    if (!isRes(view)) { showToast("Тут нечего загружать", "err"); return; }
+    // читаем всегда байтами: текст декодируем сами, .mrs так и остаётся байтами
+    pickFile("", async (buf, fname) => {
+      const name = fname.trim();
+      if (!nameOkFor(view, name)) {
+        showToast("Недопустимое имя или расширение для этого раздела", "err"); return;
+      }
+      if (isBin(name)) { await uploadBinary(name, buf); return; }
+      if (dirty && !confirm("Изменения не сохранены. Заменить содержимое редактора файлом с диска?")) return;
+      setBinMode(false);
+      curFile = name;
+      code.value = new TextDecoder().decode(buf).replace(/\r\n/g, "\n");
+      dirty = true; renderGutter(); setResPath(name); markSel();
+      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + name + " (не сохранён)";
+      setConsole("Файл загружен", name + " подставлен в редактор, но НЕ сохранён. "
+        + "Нажми «Сохранить».", "muted");
+      showToast("Загружено в редактор", "ok");
+    }, true);
+  }
+
+  // Двоичный файл в редактор не положить, поэтому он пишется на диск сразу —
+  // отдельного шага «Сохранить» для него нет.
+  async function uploadBinary(name, buf) {
+    if (!confirm("Записать " + name + " (" + fmtSize(buf.byteLength) + ") в "
+        + res().dir + "/?\nФайл с таким именем будет перезаписан.")) return;
+    setBusy(true);
+    try {
+      const j = await jsonFetch("/cgi-bin/save-file?" + qs("&name=" + encodeURIComponent(name)), {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: buf,
+      });
+      if (!j.ok) { setConsole("Ошибка", j.output || "unknown", "err"); showToast("Не записан", "err"); return; }
+      dirty = false; curFile = name;
+      await loadFileList();
+      setBinMode(true, name);
+      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + name;
+      setResPath(name); markSel();
+      setConsole("Записан", name + " — " + fmtSize(buf.byteLength)
+        + ". Путь для конфига указан над панелью.", "ok");
+      showToast("Записан ✓", "ok");
+    } catch (e) { setConsole("Ошибка", String(e), "err"); showToast(String(e), "err"); }
+    finally { setBusy(false); }
+  }
+
+  // Зеркало серверного whitelist'а (res_ext_ok/res_path в _lib.sh). Клиентская
+  // проверка — только чтобы не гонять заведомый мусор: решает всё равно сервер.
+  function nameOkFor(dirKey, name) {
+    if (!isRes(dirKey)) return false;
+    if (!/^[A-Za-z0-9._-]+$/.test(name) || name.charAt(0) === ".") return false;
+    return RES[dirKey].kind === "sh"
+      ? /\.sh(\.disabled)?$/.test(name)
+      : /\.(yaml|yml|list|txt|mrs)$/.test(name);
+  }
+
+  // ── бэкап целиком ──
+  const BK_DIRS = Object.keys(RES);
+  const bkLog = (text) => { const el = $("backupLog"); if (el) el.value = text; };
+  const stamp = () => new Date().toISOString().slice(0, 10);
+
+  // base64 порциями: String.fromCharCode на большом массиве кладёт стек
+  function b64FromBuf(buf) {
+    const b = new Uint8Array(buf);
+    let s = "";
+    for (let i = 0; i < b.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
+  }
+  function bufFromB64(s) {
+    const bin = atob(s);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // JSON-бандл собирается на клиенте из тех же list-files/get-file, которыми
+  // живёт панель. Текстовые файлы лежат строкой, двоичные (.mrs) — объектом
+  // {encoding:"base64",data:…}, иначе через текст они бы испортились.
+  async function exportJson() {
+    setBusy(true); bkLog("Собираю бандл…");
+    try {
+      const files = {};
+      let bin = 0;
+      const r = await fetch("/cgi-bin/get-config", { cache: "no-store" });
+      files["config.yaml"] = await r.text();
+      for (const dir of BK_DIRS) {
+        let list = [];
+        try { list = await jsonFetch("/cgi-bin/list-files?dir=" + encodeURIComponent(dir)); }
+        catch (_) { continue; }
+        for (const it of list) {
+          const fr = await fetch("/cgi-bin/get-file?dir=" + encodeURIComponent(dir)
+            + "&name=" + encodeURIComponent(it.file), { cache: "no-store" });
+          if (isBin(it.file)) {
+            files[dir + "/" + it.file] =
+              { encoding: "base64", data: b64FromBuf(await fr.arrayBuffer()) };
+            bin++;
+          } else {
+            files[dir + "/" + it.file] = await fr.text();
+          }
+        }
+      }
+      const bundle = {
+        format: "mihomo-ros-backup", version: 2, created: new Date().toISOString(), files,
+      };
+      saveText("mihomo-ros-backup-" + stamp() + ".json",
+        JSON.stringify(bundle, null, 2), "application/json");
+      bkLog("Готово. Файлов в бандле: " + Object.keys(files).length
+        + (bin ? " (из них двоичных .mrs в base64: " + bin + ")" : ""));
+      showToast("Бандл скачан ✓", "ok");
+    } catch (e) { bkLog("Ошибка: " + e); showToast("Не удалось собрать бандл", "err"); }
+    finally { setBusy(false); }
+  }
+
+  async function importJson() {
+    pickFile(".json,application/json", async (text) => {
+      let bundle;
+      try { bundle = JSON.parse(String(text)); }
+      catch (_) { bkLog("Это не JSON."); showToast("Не JSON", "err"); return; }
+      if (!bundle || bundle.format !== "mihomo-ros-backup" || !bundle.files) {
+        bkLog("Не похоже на бандл mihomo-ros (нет format/files)."); showToast("Не тот формат", "err"); return;
+      }
+      const paths = Object.keys(bundle.files);
+      if (!confirm("Восстановить " + paths.length + " файлов из бандла?\n"
+          + "Файлы с такими же именами будут перезаписаны.")) return;
+
+      setBusy(true);
+      const lines = [];
+      let written = 0, skipped = 0;
+      try {
+        // config.yaml — последним: он проходит через save-config с проверкой
+        // и горячим применением, и делать это стоит уже поверх новых провайдеров
+        for (const p of paths.filter((x) => x !== "config.yaml")) {
+          const i = p.indexOf("/");
+          const dir = i < 0 ? "" : p.slice(0, i);
+          const name = i < 0 ? p : p.slice(i + 1);
+          if (!nameOkFor(dir, name)) { skipped++; lines.push("пропущен " + p + " (не проходит whitelist)"); continue; }
+          const v = bundle.files[p];
+          let opts;
+          if (v && typeof v === "object" && v.encoding === "base64") {
+            opts = { method: "POST", headers: { "Content-Type": "application/octet-stream" },
+                     body: bufFromB64(v.data) };
+          } else if (typeof v === "string") {
+            opts = txtPost(v);
+          } else {
+            skipped++; lines.push("пропущен " + p + " (непонятное содержимое)"); continue;
+          }
+          const j = await jsonFetch("/cgi-bin/save-file?dir=" + encodeURIComponent(dir)
+            + "&name=" + encodeURIComponent(name), opts);
+          if (j.ok) { written++; } else { skipped++; lines.push("не записан " + p + ": " + (j.output || "?")); }
+        }
+        if (typeof bundle.files["config.yaml"] === "string") {
+          const j = await jsonFetch("/cgi-bin/save-config?force=false", txtPost(bundle.files["config.yaml"]));
+          if (j.ok) { written++; lines.push("config.yaml восстановлен (" + j.stage + ")"); }
+          else { skipped++; lines.push("config.yaml НЕ применён: " + (j.output || "?")); }
+        }
+        bkLog("Восстановлено: " + written + ", пропущено: " + skipped
+          + (lines.length ? "\n" + lines.join("\n") : ""));
+        showToast("Импорт завершён", skipped ? "err" : "ok");
+      } catch (e) { bkLog("Ошибка: " + e); showToast(String(e), "err"); }
+      finally { setBusy(false); await reloadData(); }
+    });
+  }
+
+  async function exportTar() {
+    setBusy(true); bkLog("Собираю архив…");
+    try {
+      const r = await fetch("/cgi-bin/export-all", { method: "POST", cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      saveBlob("mihomo-ros-backup-" + stamp() + ".tar", blob);
+      bkLog("Готово. Размер архива: " + blob.size + " байт.");
+      showToast("Архив скачан ✓", "ok");
+    } catch (e) { bkLog("Ошибка: " + e); showToast("Не удалось собрать архив", "err"); }
+    finally { setBusy(false); }
+  }
+
+  async function importTar() {
+    pickFile(".tar", async (buf) => {
+      if (!confirm("Восстановить файлы из архива? Файлы с такими же именами будут перезаписаны.")) return;
+      setBusy(true); bkLog("Распаковываю…");
+      try {
+        const j = await jsonFetch("/cgi-bin/import-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: buf,
+        });
+        bkLog(j.output || (j.ok ? "готово" : "ошибка"));
+        showToast(j.ok ? "Импорт завершён" : "Импорт не удался", j.ok ? "ok" : "err");
+      } catch (e) { bkLog("Ошибка: " + e); showToast(String(e), "err"); }
+      finally { setBusy(false); await reloadData(); }
+    }, true);
+  }
+
+  // Перечитать данные без перезагрузки страницы: сбрасываем буферы вкладок
+  // (иначе switchView вернёт устаревший текст из store) и заново тянем то,
+  // что показывает активный вид.
+  async function reloadData() {
+    Object.keys(store).forEach((k) => { delete store[k]; });
+    dirty = false;
+    if (view === "yaml") {
+      await loadConfig();
+    } else if (isRes(view)) {
+      setBinMode(false);
+      curFile = null; code.value = ""; renderGutter();
+      $("cfgPath").textContent = ""; setResPath(null);
+      setConsole("Консоль", "Данные перечитаны. Выбери файл слева.", "muted");
+      await loadFileList();
+    }
+    await refreshStatus();
+  }
+
   /* ── view switching ─────────────────────────────────────── */
   function snapshot() {
     if (view === "yaml") store.yaml = { full: cfgFull, sel: cfgSel, dirty };
@@ -628,8 +993,10 @@
     $("actionsScript").hidden = kind !== "sh";
     $("actionsProvider").hidden = kind !== "prov";
     $("filesPanel").hidden = false;       // колонка видна всегда
-    $("newBtn").hidden = yaml || tools;   // у конфига и инструментов нет «новый»
+    $("filesTools").hidden = tools;       // у инструментов нет файловых операций
+    $("newBtn").hidden = yaml;            // у конфига нет «создать файл»
     $("editorWrap").hidden = tools;       // у инструментов своя панель вместо редактора
+    $("binPane").hidden = true;           // покажется только при открытии .mrs
     $("console").hidden = tools;
     $("toolsPane").hidden = !tools;
     $("resPath").hidden = true;           // строка пути покажется при выборе файла
@@ -654,7 +1021,9 @@
     if (v === view) return;
     snapshot();
     view = v;
+    binMode = false;                      // applyChrome прячет binPane, состояние тоже сбрасываем
     applyChrome(v);
+    syncBinButtons();
 
     const yaml = v === "yaml";
     const tools = v === "tools";
@@ -673,7 +1042,9 @@
     } else if (s) {
       code.value = s.text; dirty = s.dirty; curFile = s.curFile || null;
       $("cfgPath").textContent = s.cfgPath || "";
-      renderGutter(); setResPath(curFile); loadFileList();
+      renderGutter(); setResPath(curFile);
+      // список обновляем до setBinMode: размер файла берётся из fileMeta
+      loadFileList().then(() => { if (isBin(curFile)) setBinMode(true, curFile); });
     } else {
       dirty = false; curFile = null; $("cfgPath").textContent = "";
       code.value = ""; renderGutter(); setResPath(null);
@@ -688,6 +1059,7 @@
     { id: "awg", label: "AWG → YAML", card: "toolAwg" },
     { id: "toml", label: "TOML → YAML", card: "toolToml" },
     { id: "openvpn", label: "OpenVPN → YAML", card: "toolOpenvpn" },
+    { id: "backup", label: "Бэкап / восстановление", card: "toolBackup" },
   ];
   let curTool = "hash";
   function buildToolsList() {
@@ -762,7 +1134,6 @@
   };
   $("scrReloadBtn").addEventListener("click", reload);
   $("scrCheckBtn").addEventListener("click", validateFile);
-  $("scrRunBtn").addEventListener("click", runFile);
   $("scrToggleBtn").addEventListener("click", toggleFile);
   $("scrDeleteBtn").addEventListener("click", deleteFile);
   $("scrSaveBtn").addEventListener("click", saveFile);
@@ -771,6 +1142,12 @@
   $("prvDeleteBtn").addEventListener("click", deleteFile);
   $("prvSaveBtn").addEventListener("click", saveFile);
   $("newBtn").addEventListener("click", newFile);
+  $("dlBtn").addEventListener("click", downloadCurrent);
+  $("upBtn").addEventListener("click", uploadCurrent);
+  $("tarExport").addEventListener("click", exportTar);
+  $("tarImport").addEventListener("click", importTar);
+  $("jsonExport").addEventListener("click", exportJson);
+  $("jsonImport").addEventListener("click", importJson);
   $("resPathCopy").addEventListener("click", () => {
     const t = $("resPathText").textContent; if (!t) return;
     if (navigator.clipboard) navigator.clipboard.writeText(t);
