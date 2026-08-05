@@ -1,6 +1,6 @@
 #!/bin/sh
 # GET runtime status: { "running": bool, "version": "...", "config": "..." }
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
 
 VER="$(mihomo -v 2>/dev/null | head -n1 | json_escape)"
 
@@ -13,7 +13,20 @@ fi
 
 EXT_UI="$(_yaml external-ui)"
 
+# Состояние basic auth читаем из httpd.conf, а не из env: это то, что реально
+# применил httpd. Пустой файл = BASIC_AUTH=off, дефолтный хеш = пароль admin.
+# По обоим флагам вебка показывает предупреждение.
+AUTH_OFF=false
+AUTH_DEFAULT=false
+if [ -s /etc/httpd.conf ]; then
+  grep -Fq '$1$mihomors$BipEGg3TOdgaQSFfGtisO1' /etc/httpd.conf && AUTH_DEFAULT=true
+else
+  AUTH_OFF=true
+fi
+
 send_json "200 OK"
-printf '{"running":%s,"version":"%s","config":"%s","apiPort":"%s","ui":"%s"}' \
+printf '{"running":%s,"version":"%s","config":"%s","apiPort":"%s","ui":"%s",'\
+'"authOff":%s,"authDefault":%s}' \
   "$RUNNING" "$VER" "$(printf '%s' "$CONFIG" | json_escape)" \
-  "$API_PORT" "$(printf '%s' "$EXT_UI" | json_escape)"
+  "$API_PORT" "$(printf '%s' "$EXT_UI" | json_escape)" \
+  "$AUTH_OFF" "$AUTH_DEFAULT"

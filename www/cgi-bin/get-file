@@ -1,6 +1,6 @@
 #!/bin/sh
 # GET ?dir=<key>&name=<file> -> plain text content
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
 
 path="$(res_path "$(query_get dir)" "$(query_get name)")" || {
   send_text "400 Bad Request"; echo "# bad request"; exit 0; }

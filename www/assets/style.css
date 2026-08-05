@@ -95,6 +95,15 @@ body{
 .topbar-title .path{font-family:var(--mono);font-size:11.5px;color:var(--muted-2)}
 .topbar-actions{display:flex;gap:9px}
 
+/* баннер про пароль вебки (дефолтный пароль / auth выключен) */
+.authwarn{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 14px;border-radius:11px;font-size:12.5px;line-height:1.45;
+  background:rgba(255,93,108,.1);border:1px solid rgba(255,93,108,.4);
+}
+.authwarn code{font-family:var(--mono);font-size:11.5px}
+.authwarn.warn{background:rgba(255,193,94,.1);border-color:rgba(255,193,94,.45)}
+
 .btn{
   appearance:none;border:1px solid var(--border);background:var(--panel);
   color:var(--text);font-family:var(--ui);font-size:13.5px;font-weight:500;
@@ -125,9 +134,18 @@ body{
 }
 .files-head{
   display:flex;align-items:center;justify-content:space-between;
-  padding:11px 13px;border-bottom:1px solid var(--border-soft);
+  padding:11px 13px;
   font-size:12.5px;font-weight:600;color:var(--text);
 }
+/* панель узкая (230px), поэтому кнопки живут отдельным рядом и с подписями:
+   иконки без текста в такой ширине не читаются */
+.files-tools{
+  display:grid;grid-template-columns:1fr 1fr;gap:7px;
+  padding:0 11px 11px;border-bottom:1px solid var(--border-soft);
+}
+.files-tools[hidden]{display:none}
+.files-tools .btn{width:100%;margin:0;text-align:center;white-space:nowrap}
+.files-tools #newBtn{grid-column:1 / -1}
 .files-list{list-style:none;margin:0;padding:6px;overflow:auto;flex:1}
 .files-empty{padding:14px 12px;color:var(--muted-2);font-size:12.5px}
 .files-sep{height:1px;background:var(--border-soft);margin:6px 8px}
@@ -252,6 +270,22 @@ body{
 .tool-out input{flex:1;margin:0}
 .tool-out .btn{margin:0;flex:0 0 auto}
 .tool-note{margin:0!important;font-size:12px;color:var(--muted-2)}
+.tool-row{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 16px}
+.tool-row .btn{margin:0}
+
+/* заглушка вместо редактора для .mrs */
+.bin-pane{
+  flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  padding:24px;overflow:auto;
+}
+.bin-pane[hidden]{display:none}
+.bin-card{max-width:520px;text-align:center}
+.bin-ico{font-size:34px;color:var(--accent);line-height:1;margin:0 0 12px}
+.bin-card h3{margin:0 0 4px;font-family:var(--mono);font-size:15px;font-weight:600;color:var(--text)}
+.bin-card p{margin:10px 0 0;font-size:13px;line-height:1.55;color:var(--muted)}
+.bin-card code{font-family:var(--mono);font-size:12px;color:var(--text)}
+.bin-meta{font-size:12px!important;color:var(--muted-2)!important}
 /* конвертеры: пары textarea вход/выход */
 .tool-area{
   width:100%;min-height:150px;resize:vertical;appearance:none;

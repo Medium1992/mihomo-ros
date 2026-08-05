@@ -4,10 +4,23 @@
 # OpenVPN .ovpn/.conf, TrustTunnel .toml. Выводит элемент(ы) списка proxies,
 # готовые для вставки в секцию `proxies`.
 # Returns: { "ok": bool, "output": "<yaml | сообщение об ошибке>" }
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 log() { echo "$@" >&2; }
 yaml_quote() { sed 's/\\/\\\\/g; s/"/\\"/g; s/.*/"&"/'; }
+# q — строковое поле: всегда в кавычках. n — числовое: печатается как есть,
+# но только если это действительно целое (иначе mihomo не разберёт конфиг,
+# т.к. поле объявлено int). Мусор молча выбрасывается.
+q() { printf '%s' "${1:-}" | yaml_quote; }
+n() { case "${1:-}" in ''|*[!0-9]*) printf '' ;; *) printf '%s' "$1" ;; esac; }
+
+# Предупреждения конвертера уходят в вывод YAML-комментариями: пользователь
+# видит их в панели, а не только в логе контейнера.
+WARN=""
+warn() { WARN="$WARN# ⚠ $1
+"; }
 
 KIND="$(query_get kind)"
 NAME="$(query_get name)"
@@ -42,6 +55,15 @@ read_cfg() {
   local address=$(read_cfg "Address")
   local mtu=$(read_cfg "MTU")
   local keepalive=$(read_cfg "PersistentKeepalive")
+  # 3.0 разрешает диапазон ("22-30"), но mihomo держит persistent-keepalive
+  # в int и на диапазоне не разберёт конфиг вовсе. Берём нижнюю границу:
+  # keepalive чаще — это лишний трафик, зато NAT точно останется живым.
+  case "$keepalive" in
+    *-*)
+      warn "PersistentKeepalive «$keepalive» — диапазон; взята нижняя граница ${keepalive%%-*} (mihomo принимает одно число)"
+      keepalive="${keepalive%%-*}"
+      ;;
+  esac
   local workers=$(read_cfg "Workers")
 
   local jc=$(read_cfg "Jc");         local jmin=$(read_cfg "Jmin");     local jmax=$(read_cfg "Jmax")
@@ -52,6 +74,22 @@ read_cfg() {
   local i4=$(read_cfg "I4");         local i5=$(read_cfg "I5")
   local j1=$(read_cfg "J1");         local j2=$(read_cfg "J2");         local j3=$(read_cfg "J3")
   local itime=$(read_cfg "ITime")
+
+  # ── AmneziaWG 3.0 ──
+  # HeaderProtectionKey и ContentPaddingAddition должны совпадать с сервером,
+  # тайминги — чисто клиентские. Все значения кроме ключа могут быть как одним
+  # числом, так и диапазоном "a-b", поэтому в mihomo это строковые поля.
+  local hp_key=$(read_cfg "HeaderProtectionKey")
+  local content_padding=$(read_cfg "ContentPaddingAddition")
+  local rekey_after=$(read_cfg "RekeyAfterTime")
+  local rekey_timeout=$(read_cfg "RekeyTimeout")
+  local reject_after=$(read_cfg "RejectAfterTime")
+  local keepalive_timeout=$(read_cfg "KeepaliveTimeout")
+  local max_handshakes=$(read_cfg "MaxHandshakeAttempts")
+  # Ручное переопределение версии — на случай, когда 3.0 нужна без единого
+  # v3-параметра. Кладётся в .conf строкой `AwgVersion = 3` (секцию можно
+  # любую, парсер секции не различает).
+  local awg_version=$(read_cfg "AwgVersion")
 
   local public_key=$(read_cfg "PublicKey")
   local psk=$(read_cfg "PresharedKey")
@@ -99,18 +137,55 @@ read_cfg() {
     allowed_ips_yaml='"0.0.0.0/0", "::/0"'
   fi
 
-  echo "  - name: \"$awg_name\""
+  # ── версия протокола ──
+  # mihomo поднимает v3-реализацию только при `version: 3`; при любом другом
+  # значении работает legacy — она же обслуживает 1.5 и 2.0.
+  local awg3=0
+  for v in "$hp_key" "$content_padding" "$rekey_after" "$rekey_timeout" \
+           "$reject_after" "$keepalive_timeout" "$max_handshakes"; do
+    [ -n "$v" ] && awg3=1
+  done
+  case "$awg_version" in
+    3|3.*) awg3=1 ;;
+    "") ;;
+    *) awg3=0 ;;
+  esac
+
+  if [ "$awg3" -eq 1 ]; then
+    # J1-J3 и ITime были только в 1.5 и вырезаны из 3.0. UAPI ядра отвергает
+    # неизвестный ключ целиком — с ними proxy просто не поднимется.
+    if [ -n "$j1$j2$j3$itime" ]; then
+      warn "AmneziaWG 3.0: параметры J1-J3/ITime из 1.5 удалены — выброшены (иначе peer не поднимется)"
+      j1=""; j2=""; j3=""; itime=""
+    fi
+    # Header protection шифрует заголовки, беря S1-S4 как nonce, поэтому ядро
+    # требует каждое из них >= 12 (HeaderCipherNonceSize) и иначе падает.
+    if [ -n "$hp_key" ]; then
+      for v in s1 s2 s3 s4; do
+        eval val=\$$v
+        # отсутствующий S* не предупреждение: ядро возьмёт его дефолт
+        [ -n "$val" ] || continue
+        case "$val" in *[!0-9]*) val=0 ;; esac
+        if [ "$val" -lt 12 ]; then
+          warn "$v=$val: при HeaderProtectionKey ядро требует S1-S4 >= 12, иначе peer не стартует"
+        fi
+      done
+    fi
+  fi
+
+  printf '%s' "$WARN"
+  printf '  - name: %s\n' "$(q "$awg_name")"
   echo "    type: wireguard"
-  [ -n "$private_key" ] && echo "    private-key: $private_key"
-  [ -n "$server" ] && echo "    server: $server"
-  [ -n "$port" ] && echo "    port: $port"
-  [ -n "$ip_v4" ] && echo "    ip: $ip_v4"
-  [ -n "$ip_v6" ] && echo "    ipv6: $ip_v6"
-  [ -n "$public_key" ] && echo "    public-key: $public_key"
-  [ -n "$psk" ] && echo "    pre-shared-key: $psk"
-  [ -n "$keepalive" ] && echo "    persistent-keepalive: $keepalive"
-  [ -n "$mtu" ] && echo "    mtu: $mtu"
-  [ -n "$workers" ] && echo "    workers: $workers"
+  [ -n "$private_key" ] && printf '    private-key: %s\n' "$(q "$private_key")"
+  [ -n "$server" ] && printf '    server: %s\n' "$(q "$server")"
+  [ -n "$(n "$port")" ] && echo "    port: $(n "$port")"
+  [ -n "$ip_v4" ] && printf '    ip: %s\n' "$(q "$ip_v4")"
+  [ -n "$ip_v6" ] && printf '    ipv6: %s\n' "$(q "$ip_v6")"
+  [ -n "$public_key" ] && printf '    public-key: %s\n' "$(q "$public_key")"
+  [ -n "$psk" ] && printf '    pre-shared-key: %s\n' "$(q "$psk")"
+  [ -n "$(n "$keepalive")" ] && echo "    persistent-keepalive: $(n "$keepalive")"
+  [ -n "$(n "$mtu")" ] && echo "    mtu: $(n "$mtu")"
+  [ -n "$(n "$workers")" ] && echo "    workers: $(n "$workers")"
 
   local reserved_raw=$(read_cfg "Reserved")
   if [ -n "$reserved_raw" ]; then
@@ -135,6 +210,8 @@ read_cfg() {
   fi
 
   local awg_params="jc jmin jmax s1 s2 s3 s4 h1 h2 h3 h4 i1 i2 i3 i4 i5 j1 j2 j3 itime"
+  awg_params="$awg_params hp_key content_padding rekey_after rekey_timeout"
+  awg_params="$awg_params reject_after keepalive_timeout max_handshakes"
   local has_awg_param=0
   for v in i1 i2 i3 i4 i5; do
     eval val=\$$v
@@ -150,26 +227,31 @@ read_cfg() {
 
   if [ "$has_awg_param" -eq 1 ]; then
     echo "    amnezia-wg-option:"
-    [ -n "$jc" ]     && echo "      jc: $jc"
-    [ -n "$jmin" ]   && echo "      jmin: $jmin"
-    [ -n "$jmax" ]   && echo "      jmax: $jmax"
-    [ -n "$s1" ]     && echo "      s1: $s1"
-    [ -n "$s2" ]     && echo "      s2: $s2"
-    [ -n "$s3" ]     && echo "      s3: $s3"
-    [ -n "$s4" ]     && echo "      s4: $s4"
-    [ -n "$h1" ]     && echo "      h1: $h1"
-    [ -n "$h2" ]     && echo "      h2: $h2"
-    [ -n "$h3" ]     && echo "      h3: $h3"
-    [ -n "$h4" ]     && echo "      h4: $h4"
-    [ -n "$i1" ]     && printf '      i1: %s\n' "$(printf '%s' "$i1" | yaml_quote)"
-    [ -n "$i2" ]     && printf '      i2: %s\n' "$(printf '%s' "$i2" | yaml_quote)"
-    [ -n "$i3" ]     && printf '      i3: %s\n' "$(printf '%s' "$i3" | yaml_quote)"
-    [ -n "$i4" ]     && printf '      i4: %s\n' "$(printf '%s' "$i4" | yaml_quote)"
-    [ -n "$i5" ]     && printf '      i5: %s\n' "$(printf '%s' "$i5" | yaml_quote)"
-    [ -n "$j1" ]     && echo "      j1: $j1"
-    [ -n "$j2" ]     && echo "      j2: $j2"
-    [ -n "$j3" ]     && echo "      j3: $j3"
-    [ -n "$itime" ]  && echo "      itime: $itime"
+    # jc/jmin/jmax/s*/h*/j*/itime в mihomo — int; i1-i5 — строки-шаблоны пакетов
+    for v in jc jmin jmax s1 s2 s3 s4 h1 h2 h3 h4; do
+      eval val=\$$v
+      [ -n "$(n "$val")" ] && echo "      $v: $(n "$val")"
+    done
+    for v in i1 i2 i3 i4 i5; do
+      eval val=\$$v
+      [ -n "$val" ] && printf '      %s: %s\n' "$v" "$(q "$val")"
+    done
+    for v in j1 j2 j3 itime; do
+      eval val=\$$v
+      [ -n "$(n "$val")" ] && echo "      $v: $(n "$val")"
+    done
+    if [ "$awg3" -eq 1 ]; then
+      echo "      version: 3"
+      # v3-поля в mihomo объявлены строками (значением может быть диапазон),
+      # поэтому кавычим: иначе YAML отдал бы 22-30 строкой, а 30 — числом.
+      [ -n "$hp_key" ]            && printf '      header-protection-key: %s\n'   "$(q "$hp_key")"
+      [ -n "$content_padding" ]   && printf '      content-padding-addition: %s\n' "$(q "$content_padding")"
+      [ -n "$rekey_after" ]       && printf '      rekey-after-time: %s\n'         "$(q "$rekey_after")"
+      [ -n "$rekey_timeout" ]     && printf '      rekey-timeout: %s\n'            "$(q "$rekey_timeout")"
+      [ -n "$reject_after" ]      && printf '      reject-after-time: %s\n'        "$(q "$reject_after")"
+      [ -n "$keepalive_timeout" ] && printf '      keepalive-timeout: %s\n'        "$(q "$keepalive_timeout")"
+      [ -n "$max_handshakes" ]    && printf '      max-handshake-attempts: %s\n'   "$(q "$max_handshakes")"
+    fi
   fi
 }
 
@@ -292,13 +374,13 @@ emit_vpn_openvpn_proxy() {
     [ -n "$password" ] || return 1
   fi
 
-  echo "  - name: \"$name\""
+  printf '  - name: %s\n' "$(q "$name")"
   echo "    type: openvpn"
-  echo "    server: $server"
-  echo "    port: $port"
+  printf '    server: %s\n' "$(q "$server")"
+  echo "    port: $(n "$port")"
   echo "    proto: $proto"
-  [ -n "$username" ] && printf '    username: %s\n' "$(printf '%s' "$username" | yaml_quote)"
-  [ -n "$password" ] && printf '    password: %s\n' "$(printf '%s' "$password" | yaml_quote)"
+  [ -n "$username" ] && printf '    username: %s\n' "$(q "$username")"
+  [ -n "$password" ] && printf '    password: %s\n' "$(q "$password")"
   emit_yaml_block_file "ca" "$ca_file"
   [ -s "$cert_file" ] && emit_yaml_block_file "cert" "$cert_file"
   [ -s "$key_file" ] && emit_yaml_block_file "key" "$key_file"
@@ -313,7 +395,7 @@ emit_vpn_openvpn_proxy() {
   case "$comp_lzo" in
     yes|no|adaptive) echo "    comp-lzo: \"$comp_lzo\"" ;;
   esac
-  [ -n "$mtu" ] && echo "    mtu: $mtu"
+  [ -n "$(n "$mtu")" ] && echo "    mtu: $(n "$mtu")"
 
   [ "$tls_source" = "tls-auth" ] && log "Warning: $name OpenVPN uses <tls-auth>; emitted as tls-crypt"
   return 0
@@ -381,16 +463,16 @@ emit_trusttunnel_proxy() {
   [ -n "$username" ] || return 1
   [ -n "$password" ] || return 1
 
-  echo "  - name: \"$name\""
+  printf '  - name: %s\n' "$(q "$name")"
   echo "    type: trusttunnel"
-  echo "    server: $server"
-  echo "    port: $port"
-  printf '    username: %s\n' "$(printf '%s' "$username" | yaml_quote)"
-  printf '    password: %s\n' "$(printf '%s' "$password" | yaml_quote)"
+  printf '    server: %s\n' "$(q "$server")"
+  echo "    port: $(n "$port")"
+  printf '    username: %s\n' "$(q "$username")"
+  printf '    password: %s\n' "$(q "$password")"
   if [ -n "$custom_sni" ]; then
-    printf '    sni: %s\n' "$(printf '%s' "$custom_sni" | yaml_quote)"
+    printf '    sni: %s\n' "$(q "$custom_sni")"
   elif [ -n "$hostname" ] && [ "$hostname" != "$server" ]; then
-    printf '    sni: %s\n' "$(printf '%s' "$hostname" | yaml_quote)"
+    printf '    sni: %s\n' "$(q "$hostname")"
   fi
   [ "$skip_verify" = "true" ] && echo "    skip-cert-verify: true"
   [ "$protocol" = "http3" ] && echo "    quic: true"

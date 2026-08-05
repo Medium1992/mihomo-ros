@@ -1,7 +1,9 @@
 #!/bin/sh
 # POST raw password body -> md5crypt hash ($1$...) for BASIC_AUTH_HASH.
 # Returns: { "ok": bool, "hash": "..." }
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 PWD_IN="$(read_body)"
 if [ -z "$PWD_IN" ]; then

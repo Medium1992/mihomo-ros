@@ -48,7 +48,11 @@ COPY config/config.yaml  /final/etc/mihomo/config.yaml.default
 COPY config/scripts/      /final/etc/mihomo/scripts/
 COPY config/scripts-post/ /final/etc/mihomo/scripts-post/
 COPY entrypoint.sh       /final/entrypoint.sh
-RUN chmod +x /final/entrypoint.sh /final/usr/local/bin/mihomo /final/www/cgi-bin/*
+# +x получают только CGI-эндпоинты; _lib.sh/_guard.sh — общие хелперы, их
+# сорсят изнутри, и httpd не должен уметь запускать их как CGI.
+RUN chmod +x /final/entrypoint.sh /final/usr/local/bin/mihomo && \
+    chmod 0755 /final/www/cgi-bin/* && \
+    chmod 0644 /final/www/cgi-bin/_*.sh
 
 # armv7/armv5 ходят только через iptables (nft там нет) — убираем nft-скрипты
 # и скрипт выбора/установки backend (05-fw-modules: на этих сборках не нужен,

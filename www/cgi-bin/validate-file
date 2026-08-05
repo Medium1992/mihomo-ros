@@ -6,7 +6,9 @@
 #                          лоялен к domain/classical/ipcidr; classical в
 #                          convert-ruleset паникует, поэтому всегда domain); .mrs = skip
 # Returns: { "ok": bool, "output": "..." }
-. /www/cgi-bin/lib.sh
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
 
 dir="$(query_get dir)"
 name="$(query_get name)"
