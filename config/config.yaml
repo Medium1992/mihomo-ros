@@ -65,6 +65,7 @@ listeners:
   - name: tun-in
     type: tun
     device: Meta
+    stack: system
     inet4-address:
       - 100.64.0.1/30
     udp-timeout: 30
