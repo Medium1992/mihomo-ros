@@ -81,6 +81,19 @@ read_cfg() {
   local reject_after=$(read_cfg "RejectAfterTime")
   local keepalive_timeout=$(read_cfg "KeepaliveTimeout")
   local max_handshakes=$(read_cfg "MaxHandshakeAttempts")
+  # AmneziaWG 3.1 boolean options.
+  local random_trailers=$(read_cfg "RandomTrailers")
+  local disable_cookies=$(read_cfg "DisableCookies")
+  case "$(printf '%s' "$random_trailers" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) random_trailers=true ;;
+    0|false|no|off) random_trailers=false ;;
+    *) random_trailers="" ;;
+  esac
+  case "$(printf '%s' "$disable_cookies" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) disable_cookies=true ;;
+    0|false|no|off) disable_cookies=false ;;
+    *) disable_cookies="" ;;
+  esac
   # override для 3.0 без v3-параметров: строка AwgVersion = 3 в .conf
   local awg_version=$(read_cfg "AwgVersion")
 
@@ -133,7 +146,7 @@ read_cfg() {
   # v3-реализация включается только version: 3; иначе legacy (1.5/2.0)
   local awg3=0
   for v in "$hp_key" "$content_padding" "$rekey_after" "$rekey_timeout" \
-           "$reject_after" "$keepalive_timeout" "$max_handshakes"; do
+           "$reject_after" "$keepalive_timeout" "$max_handshakes" "$random_trailers" "$disable_cookies"; do
     [ -n "$v" ] && awg3=1
   done
   case "$awg_version" in
@@ -213,7 +226,7 @@ read_cfg() {
 
   local awg_params="jc jmin jmax s1 s2 s3 s4 h1 h2 h3 h4 i1 i2 i3 i4 i5 j1 j2 j3 itime"
   awg_params="$awg_params hp_key content_padding rekey_after rekey_timeout"
-  awg_params="$awg_params reject_after keepalive_timeout max_handshakes"
+  awg_params="$awg_params reject_after keepalive_timeout max_handshakes random_trailers disable_cookies"
   local has_awg_param=0
   for v in i1 i2 i3 i4 i5; do
     eval val=\$$v
@@ -252,6 +265,8 @@ read_cfg() {
       [ -n "$reject_after" ]      && printf '      reject-after-time: %s\n'        "$(q "$reject_after")"
       [ -n "$keepalive_timeout" ] && printf '      keepalive-timeout: %s\n'        "$(q "$keepalive_timeout")"
       [ -n "$max_handshakes" ]    && printf '      max-handshake-attempts: %s\n'   "$(q "$max_handshakes")"
+      [ -n "$random_trailers" ]   && echo "      random-trailers: $random_trailers"
+      [ -n "$disable_cookies" ]   && echo "      disable-cookies: $disable_cookies"
     fi
   fi
 }

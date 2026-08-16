@@ -46,7 +46,7 @@ It edits files on disk and applies the config through mihomo's RESTful API — n
 - **YAML config** — one file, navigable by section. The left column lists *Whole config* + every upstream section (`general`, `dns`, `sniffer`, `tun`, `hosts`, `ntp`, `proxies`, `proxy-groups`, `proxy-providers`, `rules`, `rule-providers`, `sub-rules`, `listeners`, `profile`, `experimental`, `tunnels`). *General* aggregates every top-level scalar that doesn't belong to another tab, even if scattered. Empty sections show a placeholder with a starter example.
 - **Pre / Post scripts** — `sh` hooks with syntax check (`sh -n`), enable/disable (`.sh.disabled`), delete. Edits take effect on container restart: running scripts from the UI is deliberately not supported (see [Security](#-security)).
 - **proxy-providers / provider-rules** — YAML/list/mrs file managers, validated with `mihomo -t` / `convert-ruleset`. Binary `.mrs` files are not shown in the editor: the panel offers download, replace-from-disk and delete instead (upload them with the `⭱` button).
-- **Tools** — md5crypt hash for `BASIC_AUTH_HASH`; converters for AmneziaWG/WireGuard `.conf` (including **AWG 3.0**), TrustTunnel `.toml` and OpenVPN `.ovpn` into a `proxies` block; backup and restore.
+- **Tools** — md5crypt hash for `BASIC_AUTH_HASH`; converters for AmneziaWG/WireGuard `.conf` (including **AWG 3.0/3.1**), TrustTunnel `.toml` and OpenVPN `.ovpn` into a `proxies` block; backup and restore.
 
 **Import / export.** The `⭳` / `⭱` buttons above the file list act on the open file: download it to disk, or load a file from disk into the editor (saving stays a separate, explicit step after validation). For the whole project use *Tools → Backup and restore*:
 
