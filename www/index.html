@@ -6,7 +6,7 @@
 <!-- CSP мета-тегом: busybox httpd своих заголовков не умеет.
      frame-ancestors тут игнорируется — за это отвечает frame-buster в app.js. -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
 <meta name="referrer" content="same-origin">
 <title>mihomo-ros</title>
 <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
@@ -15,235 +15,254 @@
 <body>
 <div class="app">
 
-  <!-- sidebar -->
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">m</div>
-      <div class="brand-text">
-        <strong>mihomo</strong><span>ros</span>
-      </div>
-      <a class="brand-gh" href="https://github.com/Medium1992/mihomo-ros"
-         target="_blank" rel="noopener" title="GitHub: mihomo-ros" aria-label="GitHub">
-        <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-      </a>
-    </div>
-
-    <nav class="nav">
-      <a class="nav-item active" data-view="yaml"><span class="ico">{ }</span> YAML конфиг</a>
-      <div class="nav-label">Скрипты</div>
-      <a class="nav-item" data-view="scripts"><span class="ico">&gt;_</span> Pre-скрипты</a>
-      <a class="nav-item" data-view="scripts-post"><span class="ico">&gt;_</span> Post-скрипты</a>
-      <div class="nav-label">Провайдеры</div>
-      <a class="nav-item" data-view="proxy-providers"><span class="ico">⊟</span> proxy-providers</a>
-      <a class="nav-item" data-view="provider-rules"><span class="ico">≣</span> provider-rules</a>
-      <div class="nav-label">Прочее</div>
-      <a class="nav-item" data-view="tools"><span class="ico">⚒</span> Инструменты</a>
-    </nav>
-
-    <div class="sidebar-foot">
-      <div class="status" id="status">
-        <span class="dot" id="statusDot"></span>
+  <!-- панель действий: разделы панели -->
+  <nav class="act" aria-label="Разделы панели">
+    <div class="act-brand" aria-hidden="true"><span class="act-mark">m</span><span class="act-label">mihomo-ros</span></div>
+    <!-- состояние ядра: текст ставит refreshStatus, в свёрнутой панели видна только точка (подробности в тултипе) -->
+    <div class="act-status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span class="act-label act-status-text">
         <span id="statusText">проверка…</span>
-      </div>
-      <a class="mihomo-ui-link" id="mihomoUi" target="_blank" rel="noopener" hidden>🎛 Панель mihomo ↗</a>
-      <div class="ver" id="version">—</div>
+        <span class="act-status-sub"><span class="mono" id="version">—</span><span class="mono" id="apiPort" hidden></span></span>
+      </span>
     </div>
+    <button class="act-btn active" data-view="yaml" title="Конфиг: config.yaml" aria-label="Конфиг">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/></svg><span class="act-label">Конфиг</span>
+    </button>
+    <button class="act-btn" data-view="scripts" title="Pre-скрипты: до старта mihomo" aria-label="Pre-скрипты">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8"/></svg><span class="act-label">Pre-скрипты</span>
+    </button>
+    <button class="act-btn" data-view="scripts-post" title="Post-скрипты: после старта mihomo" aria-label="Post-скрипты">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-5-6-5M12 19h8M14 9h6"/></svg><span class="act-label">Post-скрипты</span>
+    </button>
+    <button class="act-btn" data-view="proxy-providers" title="proxy-providers" aria-label="proxy-providers">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg><span class="act-label">proxy-providers</span>
+    </button>
+    <button class="act-btn" data-view="provider-rules" title="provider-rules" aria-label="provider-rules">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="act-label">provider-rules</span>
+    </button>
+    <button class="act-btn" data-view="tools" title="Инструменты" aria-label="Инструменты">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5L13 18l-3-3 6.7-6.7zM10 15l-6 6"/></svg><span class="act-label">Инструменты</span>
+    </button>
+    <!-- документация mihomo: ссылка меняется по выбранному разделу/вкладке (renderSecDoc) -->
+    <a class="act-btn act-doc" id="secDocLink" href="https://wiki.metacubex.one/ru/config/" target="_blank" rel="noopener" title="Документация mihomo" aria-label="Документация mihomo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5V4.5A2.5 2.5 0 0 1 6.5 2H20v15M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg><span class="act-label">Документация</span>
+    </a>
+    <!-- дашборд ядра (external-ui): показывается, когда ядро запущено и external-ui задан -->
+    <a class="act-btn act-dash" id="mihomoUi" target="_blank" rel="noopener" title="Дашборд mihomo: внешний UI ядра" aria-label="Дашборд mihomo" hidden>
+      <!-- иконка zashboard (Heroicons «cube-transparent», MIT) -->
+      <svg class="fill" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.622 1.602a.75.75 0 0 1 .756 0l2.25 1.313a.75.75 0 0 1-.756 1.295L12 3.118 10.128 4.21a.75.75 0 1 1-.756-1.295l2.25-1.313ZM5.898 5.81a.75.75 0 0 1-.27 1.025l-1.14.665 1.14.665a.75.75 0 1 1-.756 1.295L3.75 8.806v.944a.75.75 0 0 1-1.5 0V7.5a.75.75 0 0 1 .372-.648l2.25-1.312a.75.75 0 0 1 1.026.27Zm12.204 0a.75.75 0 0 1 1.026-.27l2.25 1.312a.75.75 0 0 1 .372.648v2.25a.75.75 0 0 1-1.5 0v-.944l-1.122.654a.75.75 0 1 1-.756-1.295l1.14-.665-1.14-.665a.75.75 0 0 1-.27-1.025Zm-9 5.25a.75.75 0 0 1 1.026-.27L12 11.882l1.872-1.092a.75.75 0 1 1 .756 1.295l-1.878 1.096V15a.75.75 0 0 1-1.5 0v-1.82l-1.878-1.095a.75.75 0 0 1-.27-1.025ZM3 13.5a.75.75 0 0 1 .75.75v1.82l1.878 1.095a.75.75 0 1 1-.756 1.295l-2.25-1.312a.75.75 0 0 1-.372-.648v-2.25A.75.75 0 0 1 3 13.5Zm18 0a.75.75 0 0 1 .75.75v2.25a.75.75 0 0 1-.372.648l-2.25 1.312a.75.75 0 1 1-.756-1.295l1.878-1.096V14.25a.75.75 0 0 1 .75-.75Zm-9 5.25a.75.75 0 0 1 .75.75v.944l1.122-.654a.75.75 0 1 1 .756 1.295l-2.25 1.313a.75.75 0 0 1-.756 0l-2.25-1.313a.75.75 0 1 1 .756-1.295l1.122.654V19.5a.75.75 0 0 1 .75-.75Z"/></svg><span class="act-label">Дашборд mihomo</span>
+    </a>
+    <a class="act-btn act-gh" href="https://github.com/Medium1992/mihomo-ros" target="_blank" rel="noopener" title="GitHub: mihomo-ros" aria-label="GitHub">
+      <svg class="fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span class="act-label">GitHub</span>
+    </a>
+    <button class="act-btn act-user" id="logoutBtn" title="Выйти из панели" aria-label="Выйти из панели" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg><span class="act-label"><span id="sbUser">—</span><span class="act-sub">выйти</span></span>
+    </button>
+    <button class="act-btn act-toggle" id="actToggle" title="Развернуть панель" aria-label="Развернуть панель" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg><span class="act-label">Свернуть</span>
+    </button>
+  </nav>
+
+  <!-- проводник: разделы конфига / файлы / инструменты -->
+  <aside class="explorer" id="filesPanel">
+    <div class="explorer-head">
+      <div class="explorer-titles">
+        <span class="explorer-title" id="filesTitle">Разделы</span>
+        <span class="explorer-sub" id="filesSub">config.yaml</span>
+      </div>
+      <div class="explorer-tools" id="filesTools">
+        <button class="ibtn" id="newBtn" title="Создать файл" aria-label="Создать файл"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="ibtn" id="dlBtn" title="Скачать открытый файл на диск" aria-label="Скачать"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"/></svg></button>
+        <button class="ibtn" id="upBtn" title="Взять файл с диска: текстовый откроется в редакторе, .mrs зальётся как есть" aria-label="Загрузить"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4l4 4M5 19h14"/></svg></button>
+      </div>
+    </div>
+    <!-- один input на все импорты -->
+    <input type="file" id="filePick" hidden>
+    <ul class="explorer-list" id="filesList"></ul>
+    <div class="explorer-hint" id="filesHint"></div>
   </aside>
 
-  <!-- main -->
   <main class="main">
     <!-- текст ставит app.js по флагам /cgi-bin/status -->
     <div class="authwarn" id="authWarn" hidden></div>
 
-    <header class="topbar">
-      <div class="topbar-title">
-        <h1 id="viewTitle">config.yaml</h1>
-        <span class="path" id="cfgPath"></span>
-      </div>
+    <div class="tabbar">
+      <div class="tab"><span class="tab-name" id="cfgPath">config.yaml</span><span class="tab-dirty" id="tabDirty" hidden title="Есть несохранённые изменения"></span></div>
 
-      <div class="topbar-actions" id="actionsYaml">
-        <button class="btn ghost" id="reloadBtn" title="Перечитать config.yaml с диска, отменив несохранённые правки">↺ Сбросить</button>
+      <div class="tabbar-actions" id="actionsYaml">
+        <button class="btn ghost" id="reloadBtn" title="Перечитать config.yaml с диска, отменив несохранённые правки">Сбросить</button>
         <button class="btn" id="validateBtn" title="Проверить конфиг через mihomo -t, ничего не сохраняя (Ctrl+Enter)">Проверить</button>
-        <button class="btn primary" id="applyBtn" title="Мягко применить: горячее обновление proxies, групп, правил и DNS без пересоздания портов/листенеров — соединения не рвутся (Ctrl+S)">Применить</button>
-        <button class="btn" id="applyFullBtn" title="Полностью применить: перезагрузка с пересозданием портов, листенеров и TUN. Нужно при смене mixed-port / allow-lan / bind-address / tun / listeners. Рвёт текущие соединения.">Полностью применить</button>
+        <div class="split">
+          <button class="btn primary" id="applyBtn" title="Проверить, сохранить и мягко применить без пересоздания портов и TUN (Ctrl+S)">Применить</button>
+          <button class="btn primary split-caret" id="applyMenuBtn" title="Другие способы применить" aria-label="Меню применения" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+        </div>
       </div>
-
-      <div class="topbar-actions" id="actionsScript" hidden>
-        <button class="btn ghost"  id="scrReloadBtn" title="Перечитать с диска">↺ Сбросить</button>
+      <div class="tabbar-actions" id="actionsScript" hidden>
+        <button class="btn ghost"  id="scrReloadBtn" title="Перечитать с диска">Сбросить</button>
         <button class="btn"        id="scrCheckBtn"  title="Проверить синтаксис (sh -n)">Проверить</button>
-        <button class="btn"        id="scrToggleBtn" title="Включить/выключить">⏻ Вкл/выкл</button>
-        <button class="btn danger" id="scrDeleteBtn">🗑 Удалить</button>
+        <button class="btn"        id="scrToggleBtn" title="Включить или выключить скрипт">Вкл/выкл</button>
+        <button class="btn ghost danger" id="scrDeleteBtn">Удалить</button>
         <button class="btn primary" id="scrSaveBtn">Сохранить</button>
       </div>
-
-      <div class="topbar-actions" id="actionsProvider" hidden>
-        <button class="btn ghost"  id="prvReloadBtn" title="Перечитать с диска">↺ Сбросить</button>
+      <div class="tabbar-actions" id="actionsProvider" hidden>
+        <button class="btn ghost"  id="prvReloadBtn" title="Перечитать с диска">Сбросить</button>
         <button class="btn"        id="prvCheckBtn"  title="Проверить через mihomo">Проверить</button>
-        <button class="btn danger" id="prvDeleteBtn">🗑 Удалить</button>
+        <button class="btn ghost danger" id="prvDeleteBtn">Удалить</button>
         <button class="btn primary" id="prvSaveBtn">Сохранить</button>
       </div>
-    </header>
+    </div>
 
-    <section class="body-split">
-      <!-- generic file list — resource views only -->
-      <aside class="files" id="filesPanel" hidden>
-        <div class="files-head">
-          <span id="filesTitle">Файлы</span>
+    <div class="infoline" id="secDoc" hidden>
+      <span id="secDocNote"></span>
+    </div>
+    <div class="infoline" id="resPath" hidden>
+      <span>Путь для конфига: <code id="resPathText"></code></span>
+      <button class="btn tiny infoline-right" id="resPathCopy">Копировать</button>
+    </div>
+
+    <section class="editor-wrap" id="editorWrap">
+      <div class="editor" id="editor">
+        <div class="gutter" id="gutter"></div>
+        <div class="code-wrap">
+          <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
+          <textarea id="code" spellcheck="false" autocomplete="off"
+                    autocapitalize="off" autocorrect="off" wrap="off"></textarea>
         </div>
-        <div class="files-tools" id="filesTools">
-          <button class="btn tiny primary" id="newBtn">＋&nbsp;создать файл</button>
-          <button class="btn tiny" id="dlBtn"
-                  title="Скачать открытый файл на диск">⭳&nbsp;скачать</button>
-          <button class="btn tiny" id="upBtn"
-                  title="Взять файл с диска: текстовый откроется в редакторе, .mrs зальётся как есть">⭱&nbsp;загрузить</button>
-        </div>
-        <!-- один input на все импорты -->
-        <input type="file" id="filePick" hidden>
-        <ul class="files-list" id="filesList"></ul>
-        <div class="files-hint" id="filesHint"></div>
-      </aside>
-
-      <div class="editor-col">
-        <div class="sec-doc" id="secDoc" hidden>
-          <span class="sec-doc-note" id="secDocNote"></span>
-          <a class="sec-doc-link" id="secDocLink" target="_blank" rel="noopener">📖 Документация mihomo ↗</a>
-        </div>
-
-        <div class="sec-doc" id="resPath" hidden>
-          <span class="sec-doc-note">Путь для конфига: <code id="resPathText"></code></span>
-          <button class="btn tiny" id="resPathCopy">Копировать путь</button>
-        </div>
-
-        <section class="editor-wrap" id="editorWrap">
-          <div class="editor" id="editor">
-            <div class="gutter" id="gutter"></div>
-            <div class="code-wrap">
-              <pre class="hl" id="hl" aria-hidden="true"><code></code></pre>
-              <textarea id="code" spellcheck="false" autocomplete="off"
-                        autocapitalize="off" autocorrect="off" wrap="off"></textarea>
-            </div>
-          </div>
-        </section>
-
-        <!-- вместо редактора для .mrs -->
-        <section class="bin-pane" id="binPane" hidden>
-          <div class="bin-card">
-            <div class="bin-ico">⬢</div>
-            <h3 id="binName">—</h3>
-            <p class="bin-meta" id="binSize"></p>
-            <p>Скомпилированный набор правил mihomo (<code>.mrs</code>) — двоичный файл,
-               в редакторе его показать нельзя. Доступны <b>⭳ скачать</b>,
-               <b>⭱ загрузить</b> (заменить файлом с диска) и <b>🗑 удалить</b>.</p>
-            <p class="bin-meta">Путь для конфига появится в строке над этой панелью —
-               его же кладите в <code>path:</code> у <code>rule-providers</code>.</p>
-          </div>
-        </section>
-
-        <section class="console" id="console">
-          <div class="console-head">
-            <span id="consoleTitle">Консоль</span>
-            <span class="spacer"></span>
-            <span class="hint" id="consoleHint">Ctrl+S — применить · Ctrl+Enter — проверить</span>
-          </div>
-          <pre id="consoleBody" class="console-body muted">Загрузка…</pre>
-        </section>
-
-        <!-- Инструменты (вместо редактора) -->
-        <section class="tools-pane" id="toolsPane" hidden>
-
-          <div class="tool-card" id="toolHash">
-            <h3>Хеш пароля для basic auth</h3>
-            <p>Введите пароль — получите md5-хеш <code>$1$…</code> для переменной
-               окружения <code>BASIC_AUTH_HASH</code> контейнера.</p>
-            <label for="hashPwd">Пароль</label>
-            <input id="hashPwd" type="text" autocomplete="off" placeholder="например: my-secret">
-            <button class="btn primary" id="hashGen">Сгенерировать хеш</button>
-            <label for="hashOut">Хеш (вставьте в <code>BASIC_AUTH_HASH</code>)</label>
-            <div class="tool-out">
-              <input id="hashOut" readonly placeholder="$1$…">
-              <button class="btn" id="hashCopy">Копировать</button>
-            </div>
-            <p class="tool-note">Логин задаётся в <code>BASIC_AUTH_USER</code> (по умолчанию
-               <code>admin</code>). По умолчанию пароль — <code>admin</code>.</p>
-          </div>
-
-          <div class="tool-card" id="toolAwg" hidden>
-            <h3>AWG / WireGuard <code>.conf</code> → YAML</h3>
-            <p>Вставьте содержимое <code>.conf</code> (AmneziaWG или обычный WireGuard) —
-               получите блок прокси <code>type: wireguard</code> для секции <code>proxies</code>.</p>
-            <label for="awgIn">Исходный <code>.conf</code></label>
-            <textarea id="awgIn" class="tool-area" spellcheck="false" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.8.0.2/32&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = host:51820&#10;AllowedIPs = 0.0.0.0/0, ::/0"></textarea>
-            <button class="btn primary" id="awgGen">Конвертировать</button>
-            <label for="awgOut">YAML (вставьте в <code>proxies</code>)</label>
-            <div class="tool-out-block">
-              <textarea id="awgOut" class="tool-area" readonly placeholder="результат…"></textarea>
-              <button class="btn" id="awgCopy">Копировать</button>
-            </div>
-          </div>
-
-          <div class="tool-card" id="toolToml" hidden>
-            <h3>TrustTunnel <code>.toml</code> → YAML</h3>
-            <p>Вставьте TrustTunnel-конфиг <code>.toml</code> — получите блок прокси
-               <code>type: trusttunnel</code> для секции <code>proxies</code>.</p>
-            <label for="tomlIn">Исходный <code>.toml</code></label>
-            <textarea id="tomlIn" class="tool-area" spellcheck="false" placeholder='hostname = "vpn.example.com"&#10;addresses = ["1.2.3.4:8443"]&#10;username = "user"&#10;password = "pass"&#10;skip_verification = true&#10;upstream_protocol = "http3"'></textarea>
-            <button class="btn primary" id="tomlGen">Конвертировать</button>
-            <label for="tomlOut">YAML (вставьте в <code>proxies</code>)</label>
-            <div class="tool-out-block">
-              <textarea id="tomlOut" class="tool-area" readonly placeholder="результат…"></textarea>
-              <button class="btn" id="tomlCopy">Копировать</button>
-            </div>
-          </div>
-
-          <div class="tool-card" id="toolOpenvpn" hidden>
-            <h3>OpenVPN <code>.ovpn</code> → YAML</h3>
-            <p>Вставьте OpenVPN-конфиг (со встроенными блоками <code>&lt;ca&gt;</code>/<code>&lt;cert&gt;</code>/<code>&lt;key&gt;</code>
-               или <code>auth-user-pass</code>) — получите блок прокси <code>type: openvpn</code>.</p>
-            <label for="ovpnIn">Исходный <code>.ovpn</code></label>
-            <textarea id="ovpnIn" class="tool-area" spellcheck="false" placeholder="client&#10;dev tun&#10;proto udp&#10;remote 1.2.3.4 1194&#10;&lt;ca&gt;&#10;-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----&#10;&lt;/ca&gt;"></textarea>
-            <button class="btn primary" id="ovpnGen">Конвертировать</button>
-            <label for="ovpnOut">YAML (вставьте в <code>proxies</code>)</label>
-            <div class="tool-out-block">
-              <textarea id="ovpnOut" class="tool-area" readonly placeholder="результат…"></textarea>
-              <button class="btn" id="ovpnCopy">Копировать</button>
-            </div>
-          </div>
-
-          <div class="tool-card" id="toolBackup" hidden>
-            <h3>Бэкап и восстановление</h3>
-            <p>Выгружает и загружает всё сразу: <code>config.yaml</code>, pre/post-скрипты,
-               <code>proxy-providers/</code>, <code>provider-rules/</code>.</p>
-            <p class="tool-note">⚠ Бэкап содержит секреты открытым текстом:
-               <code>secret</code> ядра, пароли и ключи прокси. Храните его так же
-               аккуратно, как сам конфиг.</p>
-
-            <label>tar-архив — всё, включая бинарные <code>.mrs</code></label>
-            <div class="tool-row">
-              <button class="btn primary" id="tarExport">⭳ Скачать .tar</button>
-              <button class="btn" id="tarImport">⭱ Восстановить из .tar</button>
-            </div>
-
-            <label>JSON-бандл — один текстовый файл, удобно смотреть и править</label>
-            <div class="tool-row">
-              <button class="btn primary" id="jsonExport">⭳ Скачать .json</button>
-              <button class="btn" id="jsonImport">⭱ Восстановить из .json</button>
-            </div>
-            <p class="tool-note">Двоичные <code>.mrs</code> тоже входят — они лежат
-               в бандле в base64.</p>
-
-            <label for="backupLog">Журнал</label>
-            <div class="tool-out-block">
-              <textarea id="backupLog" class="tool-area" readonly placeholder="здесь появится результат…"></textarea>
-            </div>
-          </div>
-
-        </section>
       </div>
     </section>
+
+    <!-- вместо редактора для .mrs -->
+    <section class="bin-pane" id="binPane" hidden>
+      <div class="bin-card">
+        <div class="bin-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2l8.5 5v10L12 22l-8.5-5V7z"/></svg></div>
+        <h3 id="binName">—</h3>
+        <p class="bin-meta" id="binSize"></p>
+        <p>Скомпилированный набор правил mihomo (<code>.mrs</code>): двоичный файл, в редакторе его не показать.
+           Доступны скачивание, замена файлом с диска и удаление.</p>
+        <p class="bin-meta">Путь для конфига показан над этой панелью, его же кладите в <code>path:</code> у <code>rule-providers</code>.</p>
+      </div>
+    </section>
+
+    <!-- Инструменты (вместо редактора) -->
+    <section class="tools-pane" id="toolsPane" hidden>
+
+      <div class="tool-card" id="toolHash">
+        <h3>Хеш пароля панели</h3>
+        <p>Введите пароль — получите md5-хеш <code>$1$…</code> для переменной
+           окружения <code>WEB_PASSWORD_HASH</code> контейнера.</p>
+        <label for="hashPwd">Пароль</label>
+        <input id="hashPwd" type="text" autocomplete="off" placeholder="например: my-secret">
+        <button class="btn primary" id="hashGen">Сгенерировать хеш</button>
+        <label for="hashOut">Хеш (вставьте в <code>WEB_PASSWORD_HASH</code>)</label>
+        <div class="tool-out">
+          <input id="hashOut" readonly placeholder="$1$…">
+          <button class="btn" id="hashCopy">Копировать</button>
+        </div>
+        <p class="tool-note">Логин задаётся в <code>WEB_USER</code> (по умолчанию <code>admin</code>).
+           Старые имена <code>BASIC_AUTH_USER</code> и <code>BASIC_AUTH_HASH</code> тоже работают.</p>
+      </div>
+
+      <div class="tool-card" id="toolAwg" hidden>
+        <h3>AWG / WireGuard <code>.conf</code> → YAML</h3>
+        <p>Вставьте содержимое <code>.conf</code> (AmneziaWG или обычный WireGuard) —
+           получите блок прокси <code>type: wireguard</code> для секции <code>proxies</code>.</p>
+        <label for="awgIn">Исходный <code>.conf</code></label>
+        <textarea id="awgIn" class="tool-area" spellcheck="false" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = 10.8.0.2/32&#10;[Peer]&#10;PublicKey = ...&#10;Endpoint = host:51820&#10;AllowedIPs = 0.0.0.0/0, ::/0"></textarea>
+        <button class="btn primary" id="awgGen">Конвертировать</button>
+        <label for="awgOut">YAML (вставьте в <code>proxies</code>)</label>
+        <div class="tool-out-block">
+          <textarea id="awgOut" class="tool-area" readonly placeholder="результат…"></textarea>
+          <button class="btn" id="awgCopy">Копировать</button>
+        </div>
+      </div>
+
+      <div class="tool-card" id="toolToml" hidden>
+        <h3>TrustTunnel <code>.toml</code> → YAML</h3>
+        <p>Вставьте TrustTunnel-конфиг <code>.toml</code> — получите блок прокси
+           <code>type: trusttunnel</code> для секции <code>proxies</code>.</p>
+        <label for="tomlIn">Исходный <code>.toml</code></label>
+        <textarea id="tomlIn" class="tool-area" spellcheck="false" placeholder='hostname = "vpn.example.com"&#10;addresses = ["1.2.3.4:8443"]&#10;username = "user"&#10;password = "pass"&#10;skip_verification = true&#10;upstream_protocol = "http3"'></textarea>
+        <button class="btn primary" id="tomlGen">Конвертировать</button>
+        <label for="tomlOut">YAML (вставьте в <code>proxies</code>)</label>
+        <div class="tool-out-block">
+          <textarea id="tomlOut" class="tool-area" readonly placeholder="результат…"></textarea>
+          <button class="btn" id="tomlCopy">Копировать</button>
+        </div>
+      </div>
+
+      <div class="tool-card" id="toolOpenvpn" hidden>
+        <h3>OpenVPN <code>.ovpn</code> → YAML</h3>
+        <p>Вставьте OpenVPN-конфиг (со встроенными блоками <code>&lt;ca&gt;</code>/<code>&lt;cert&gt;</code>/<code>&lt;key&gt;</code>
+           или <code>auth-user-pass</code>) — получите блок прокси <code>type: openvpn</code>.</p>
+        <label for="ovpnIn">Исходный <code>.ovpn</code></label>
+        <textarea id="ovpnIn" class="tool-area" spellcheck="false" placeholder="client&#10;dev tun&#10;proto udp&#10;remote 1.2.3.4 1194&#10;&lt;ca&gt;&#10;-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----&#10;&lt;/ca&gt;"></textarea>
+        <button class="btn primary" id="ovpnGen">Конвертировать</button>
+        <label for="ovpnOut">YAML (вставьте в <code>proxies</code>)</label>
+        <div class="tool-out-block">
+          <textarea id="ovpnOut" class="tool-area" readonly placeholder="результат…"></textarea>
+          <button class="btn" id="ovpnCopy">Копировать</button>
+        </div>
+      </div>
+
+      <div class="tool-card" id="toolBackup" hidden>
+        <h3>Бэкап и восстановление</h3>
+        <p>Выгружает и загружает всё сразу: <code>config.yaml</code>, pre/post-скрипты,
+           <code>proxy-providers/</code>, <code>provider-rules/</code>.</p>
+        <p class="tool-note">Бэкап содержит секреты открытым текстом:
+           <code>secret</code> ядра, пароли и ключи прокси. Храните его так же
+           аккуратно, как сам конфиг.</p>
+
+        <label>tar-архив — всё, включая бинарные <code>.mrs</code></label>
+        <div class="tool-row">
+          <button class="btn primary" id="tarExport">Скачать .tar</button>
+          <button class="btn" id="tarImport">Восстановить из .tar</button>
+        </div>
+
+        <label>JSON-бандл — один текстовый файл, удобно смотреть и править</label>
+        <div class="tool-row">
+          <button class="btn primary" id="jsonExport">Скачать .json</button>
+          <button class="btn" id="jsonImport">Восстановить из .json</button>
+        </div>
+        <p class="tool-note">Двоичные <code>.mrs</code> тоже входят — они лежат
+           в бандле в base64.</p>
+
+        <label for="backupLog">Журнал</label>
+        <div class="tool-out-block">
+          <textarea id="backupLog" class="tool-area" readonly placeholder="здесь появится результат…"></textarea>
+        </div>
+      </div>
+
+    </section>
+
+    <section class="output" id="console">
+      <div class="output-head">
+        <span id="consoleTitle">Вывод</span>
+        <span class="output-hint" id="consoleHint"></span>
+        <button class="ibtn" id="consoleToggle" title="Свернуть или развернуть вывод" aria-label="Свернуть вывод" aria-expanded="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
+      </div>
+      <pre id="consoleBody" class="output-body muted">Загрузка…</pre>
+    </section>
   </main>
+
 </div>
 
 <div class="toast" id="toast"></div>
+
+<dialog class="dlg" id="dlg">
+  <form method="dialog" id="dlgForm">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgText"></p>
+    <label class="dlg-field" id="dlgField" hidden><span id="dlgLabel"></span><input id="dlgInput" autocomplete="off" spellcheck="false"></label>
+    <p class="dlg-err" id="dlgErr" hidden></p>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="dlgCancel">Отмена</button>
+      <button type="submit" class="btn primary" id="dlgOk" value="ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/assets/ui.js"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>

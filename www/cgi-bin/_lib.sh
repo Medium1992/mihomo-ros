@@ -4,7 +4,6 @@
 
 MIHOMO_DIR="${MIHOMO_DIR:-/etc/mihomo}"
 CONFIG="${CONFIG:-$MIHOMO_DIR/config.yaml}"
-SCRIPTS_DIR="$MIHOMO_DIR/scripts"
 
 # Endpoint и секрет берём прямо из живого config.yaml — единая точка истины
 # (что сохранила вебка, то и используем). Читается в момент source: CGI,
@@ -122,3 +121,69 @@ api() {
     *)  return 1 ;;
   esac
 }
+
+# ── сессии веб-панели ─────────────────────────────────────────
+# Вход по cookie sid=<64 hex>; сессия = файл $SESSION_DIR/<token> с именем
+# пользователя внутри. Живёт SESSION_TTL_MIN минут без активности, каждый
+# запрос продлевает (touch). Каталог создаёт entrypoint (0700, tmpfs).
+SESSION_DIR="${SESSION_DIR:-/dev/shm/sessions}"
+SESSION_TTL_MIN="${SESSION_TTL_MIN:-10080}"      # 7 дней
+
+session_from_cookie() {
+  _sid="$(printf '%s' "${HTTP_COOKIE:-}" | tr ';' '\n' | sed -n 's/^[[:space:]]*sid=//p' | head -n1 | tr -d ' \r')"
+  case "$_sid" in ''|*[!0-9a-f]*) return 1 ;; esac
+  [ "${#_sid}" -eq 64 ] || return 1
+  printf '%s' "$_sid"
+}
+
+_session_age() {   # секунды с последней активности файла сессии
+  _mt="$(stat -c %Y "$1" 2>/dev/null || echo 0)"
+  echo $(( $(date +%s) - _mt ))
+}
+
+session_valid() {
+  _f="$SESSION_DIR/$1"
+  [ -f "$_f" ] || return 1
+  if [ "$(_session_age "$_f")" -ge $((SESSION_TTL_MIN * 60)) ]; then rm -f "$_f"; return 1; fi
+  touch "$_f" 2>/dev/null || true
+  return 0
+}
+
+session_prune() {
+  for _f in "$SESSION_DIR"/*; do
+    [ -f "$_f" ] || continue
+    [ "$(_session_age "$_f")" -ge $((SESSION_TTL_MIN * 60)) ] && rm -f "$_f"
+  done
+  return 0
+}
+
+session_create() {   # $1 user -> печатает токен
+  mkdir -p "$SESSION_DIR" 2>/dev/null; chmod 700 "$SESSION_DIR" 2>/dev/null
+  _t="$(openssl rand -hex 32 2>/dev/null)"
+  [ "${#_t}" -eq 64 ] || _t="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  printf '%s\n' "$1" > "$SESSION_DIR/$_t" && chmod 600 "$SESSION_DIR/$_t"
+  session_prune
+  printf '%s' "$_t"
+}
+
+session_destroy() { [ -n "${1:-}" ] && rm -f "$SESSION_DIR/$1"; return 0; }
+
+session_current() {
+  _s="$(session_from_cookie)" || return 1
+  session_valid "$_s" || return 1
+  printf '%s' "$_s"
+}
+
+auth_required() { [ "${WEB_AUTH:-on}" != "off" ]; }
+
+# 401 JSON и выход, если вход обязателен и сессии нет. Никакого
+# WWW-Authenticate: иначе браузер покажет своё окно basic auth.
+auth_enforce() {
+  auth_required || return 0
+  session_current >/dev/null && return 0
+  send_json "401 Unauthorized"
+  printf '{"ok":false,"auth":false,"output":"не авторизован"}'
+  exit 0
+}
+# Публичные скрипты (index.cgi, login) ставят AUTH_PUBLIC=1 ДО source.
+[ "${AUTH_PUBLIC:-0}" = "1" ] || auth_enforce
