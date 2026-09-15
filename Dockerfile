@@ -6,6 +6,11 @@ ARG MIHOMO_CUSTOM_CORE=0
 ARG MIHOMO_REPO=MetaCubeX/mihomo
 ARG MIHOMO_CUSTOM_REPO=Medium1992/mihomo-proxy-ros
 ARG AMD64VERSION=v3
+# gvisor — ядро, собранное с gVisor (нужно для tun stack: gvisor/mixed и
+# Tailscale). В релизе mihomo-proxy-ros такие ассеты лежат под отдельным
+# префиксом mihomo-gvisor-linux-*. У upstream MetaCubeX варианта без gVisor
+# нет: его mihomo-linux-* уже с gVisor, поэтому префикс там не меняется.
+ARG MIHOMO_FLAVOR=
 RUN apk add --no-cache curl jq gzip
 
 RUN set -eu; \
@@ -23,11 +28,13 @@ RUN set -eu; \
     REL="$(curl -fsSL "$API")"; \
     TAG="$(printf '%s' "$REL" | jq -r '.tag_name')"; \
     [ -n "$TAG" ] && [ "$TAG" != "null" ] || { echo "could not resolve release tag"; exit 1; }; \
+    P="mihomo-linux"; \
+    if [ "$MIHOMO_CUSTOM_CORE" = "1" ] && [ -n "$MIHOMO_FLAVOR" ]; then P="mihomo-${MIHOMO_FLAVOR}-linux"; fi; \
     case "$TARGETARCH/$TARGETVARIANT" in \
-      amd64/*)  asset="mihomo-linux-amd64-${AMD64VERSION}-${TAG}.gz" ;; \
-      arm64/*)  asset="mihomo-linux-arm64-${TAG}.gz" ;; \
-      arm/v7)   asset="mihomo-linux-armv7-${TAG}.gz" ;; \
-      arm/v5)   asset="mihomo-linux-armv5-${TAG}.gz" ;; \
+      amd64/*)  asset="${P}-amd64-${AMD64VERSION}-${TAG}.gz" ;; \
+      arm64/*)  asset="${P}-arm64-${TAG}.gz" ;; \
+      arm/v7)   asset="${P}-armv7-${TAG}.gz" ;; \
+      arm/v5)   asset="${P}-armv5-${TAG}.gz" ;; \
       *)        echo "unsupported target arch: ${TARGETARCH}/${TARGETVARIANT}"; exit 1 ;; \
     esac; \
     URL="$(printf '%s' "$REL" | jq -r --arg n "$asset" \
