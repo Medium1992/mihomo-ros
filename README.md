@@ -41,9 +41,9 @@ It edits files on disk and applies the config through mihomo's RESTful API — n
 > password is in use the panel shows a warning banner. The session lives in a cookie until you
 > log out, after 7 idle days, or until the container restarts. See [Security](#-security).
 
-<img width="1264" height="1268" alt="image" src="https://github.com/user-attachments/assets/c14355f8-57f2-4bb2-8535-24f1a22d6f1f" />
+<img width="1264" height="1268" alt="Web panel: config editor" src="docs/screenshots/panel.png" />
 
-> The screenshot shows the previous look of the panel.
+<img width="1264" height="520" alt="Web panel: login page" src="docs/screenshots/login.png" />
 
 **Pages:**
 

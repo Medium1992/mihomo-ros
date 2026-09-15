@@ -41,9 +41,9 @@
 > предупреждение сверху. Сессия живёт в cookie до выхода, 7 дней без активности или до рестарта
 > контейнера. Подробнее — [Безопасность](#-безопасность).
 
-<img width="1264" height="1268" alt="image" src="https://github.com/user-attachments/assets/d243c0db-ef15-464f-9ed7-5fe6f871ba28" />
+<img width="1264" height="1268" alt="Веб-панель: редактор конфига" src="docs/screenshots/panel.png" />
 
-> Скриншот показывает прежний вид панели.
+<img width="1264" height="520" alt="Веб-панель: страница входа" src="docs/screenshots/login.png" />
 
 **Страницы:**
 
