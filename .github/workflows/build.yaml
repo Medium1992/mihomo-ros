@@ -175,6 +175,92 @@ jobs:
             ${{ env.HUB }}:${{ env.mihomo }}
             ${{ env.HUB }}:latest
 
+      # Те же образы, но с ядром, собранным с gVisor (tun stack gvisor/mixed,
+      # Tailscale). Теги получают суффикс -gvisor: latest-gvisor, amd64v1-gvisor…
+      - name: Build and push amd64v1 (gvisor)
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
+            AMD64VERSION=v1
+            MIHOMO_FLAVOR=gvisor
+          tags: |
+            ${{ env.GHCR }}:amd64v1-${{ env.mihomo }}-gvisor
+            ${{ env.GHCR }}:amd64v1-gvisor
+            ${{ env.HUB }}:amd64v1-${{ env.mihomo }}-gvisor
+            ${{ env.HUB }}:amd64v1-gvisor
+
+      - name: Build and push amd64v2 (gvisor)
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
+            AMD64VERSION=v2
+            MIHOMO_FLAVOR=gvisor
+          tags: |
+            ${{ env.GHCR }}:amd64v2-${{ env.mihomo }}-gvisor
+            ${{ env.GHCR }}:amd64v2-gvisor
+            ${{ env.HUB }}:amd64v2-${{ env.mihomo }}-gvisor
+            ${{ env.HUB }}:amd64v2-gvisor
+
+      - name: Build and push amd64v4 (gvisor)
+        if: steps.check.outputs.build_needed == 'true' && env.MIHOMO_CUSTOM_CORE == '1'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
+            AMD64VERSION=v4
+            MIHOMO_FLAVOR=gvisor
+          tags: |
+            ${{ env.GHCR }}:amd64v4-${{ env.mihomo }}-gvisor
+            ${{ env.GHCR }}:amd64v4-gvisor
+            ${{ env.HUB }}:amd64v4-${{ env.mihomo }}-gvisor
+            ${{ env.HUB }}:amd64v4-gvisor
+
+      - name: Build and push multi-arch (latest-gvisor)
+        if: steps.check.outputs.build_needed == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v5
+          push: true
+          build-args: |
+            MIHOMO_VERSION=${{ env.mihomo }}
+            MIHOMO_CUSTOM_CORE=${{ env.MIHOMO_CUSTOM_CORE }}
+            MIHOMO_REPO=${{ env.MIHOMO_REPO }}
+            MIHOMO_CUSTOM_REPO=${{ env.MIHOMO_CUSTOM_REPO }}
+            AMD64VERSION=v3
+            MIHOMO_FLAVOR=gvisor
+          tags: |
+            ${{ env.GHCR }}:${{ env.mihomo }}-gvisor
+            ${{ env.GHCR }}:latest-gvisor
+            ${{ env.HUB }}:${{ env.mihomo }}-gvisor
+            ${{ env.HUB }}:latest-gvisor
+
       - name: Commit VERSIONS
         if: steps.check.outputs.build_needed == 'true'
         run: |
@@ -232,11 +318,14 @@ jobs:
 
           mkdir -p telegram-images
 
+          # $4 — суффикс варианта: пусто для обычного образа, "-gvisor" для сборки
+          # с gVisor. Суффикс идёт после версии, как в тегах образов.
           export_image() {
             local name="$1"
             local platform="$2"
             local image="$3"
-            local file="telegram-images/mihomo-ros-${name}-${mihomo}.tar.gz"
+            local suffix="${4:-}"
+            local file="telegram-images/mihomo-ros-${name}-${mihomo}${suffix}.tar.gz"
             retry docker pull --platform "${platform}" "${image}"
             docker save "${image}" | gzip -9 > "${file}"
             docker image rm "${image}" || true
@@ -252,13 +341,30 @@ jobs:
           export_image "armv7"    "linux/arm/v7" "${IMAGE_REPO}:${mihomo}"
           export_image "armv5"    "linux/arm/v5" "${IMAGE_REPO}:${mihomo}"
 
+          # Те же образы с ядром, собранным с gVisor.
+          export_image "amd64-v1" "linux/amd64"  "${IMAGE_REPO}:amd64v1-${mihomo}-gvisor" "-gvisor"
+          export_image "amd64-v2" "linux/amd64"  "${IMAGE_REPO}:amd64v2-${mihomo}-gvisor" "-gvisor"
+          export_image "amd64-v3" "linux/amd64"  "${IMAGE_REPO}:${mihomo}-gvisor"         "-gvisor"
+          if [ "${MIHOMO_CUSTOM_CORE}" = "1" ]; then
+            export_image "amd64-v4" "linux/amd64"  "${IMAGE_REPO}:amd64v4-${mihomo}-gvisor" "-gvisor"
+          fi
+          export_image "arm64"    "linux/arm64"  "${IMAGE_REPO}:${mihomo}-gvisor"         "-gvisor"
+          export_image "armv7"    "linux/arm/v7" "${IMAGE_REPO}:${mihomo}-gvisor"         "-gvisor"
+          export_image "armv5"    "linux/arm/v5" "${IMAGE_REPO}:${mihomo}-gvisor"         "-gvisor"
+
           sha256sum telegram-images/*.tar.gz > telegram-images/sha256sums.txt
 
-          files_list=$(find telegram-images -maxdepth 1 -name '*.tar.gz' -type f -printf '%f\n' | sort)
-          message=$(printf 'mihomo-ros container images\n\nmihomo: %s\n\nDocker Hub: https://hub.docker.com/r/%s\n\nFiles:\n%s\n\nChecksums: sha256sums.txt' \
+          # Сначала обычные архивы, потом -gvisor: по алфавиту они перемешались бы
+          # попарно внутри каждой архитектуры.
+          plain_files=$(find telegram-images -maxdepth 1 -name '*.tar.gz' ! -name '*-gvisor.tar.gz' -type f | sort)
+          gvisor_files=$(find telegram-images -maxdepth 1 -name '*-gvisor.tar.gz' -type f | sort)
+          plain_list=$(printf '%s\n' "${plain_files}" | xargs -n1 basename)
+          gvisor_list=$(printf '%s\n' "${gvisor_files}" | xargs -n1 basename)
+          message=$(printf 'mihomo-ros container images\n\nmihomo: %s\n\nDocker Hub: https://hub.docker.com/r/%s\n\nFiles:\n%s\n\nWith gVisor (tun stack gvisor/mixed, Tailscale):\n%s\n\nChecksums: sha256sums.txt' \
             "${mihomo}" \
             "${IMAGE_REPO}" \
-            "${files_list}")
+            "${plain_list}" \
+            "${gvisor_list}")
 
           telegram_api sendMessage \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
@@ -266,12 +372,13 @@ jobs:
             --data-urlencode "text=${message}"
 
           while IFS= read -r file; do
+            [ -n "${file}" ] || continue
             telegram_api sendDocument \
               -F "chat_id=${TELEGRAM_CHAT_ID}" \
               "${thread_form_args[@]}" \
               -F "document=@${file}" \
               -F "caption=$(basename "$file")"
-          done < <(find telegram-images -maxdepth 1 -name '*.tar.gz' -type f | sort)
+          done < <(printf '%s\n' "${plain_files}" "${gvisor_files}")
 
           telegram_api sendDocument \
             -F "chat_id=${TELEGRAM_CHAT_ID}" \
