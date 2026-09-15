@@ -1,5 +1,5 @@
 #!/bin/sh
-# POST raw password body -> md5crypt hash ($1$...) for BASIC_AUTH_HASH.
+# POST raw password body -> md5crypt hash ($1$...) for WEB_PASSWORD_HASH.
 # Returns: { "ok": bool, "hash": "..." }
 . /www/cgi-bin/_lib.sh
 . /www/cgi-bin/_guard.sh
