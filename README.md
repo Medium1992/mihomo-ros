@@ -21,7 +21,7 @@
 - 🗂 **File managers** for `proxy-providers/` and `provider-rules/` with create / validate / delete
 - 💾 **Import/export** — one file at a click, or the whole project as `.tar` or a JSON bundle; after a restore the UI re-reads its data without a page reload
 - ⌨️ **Editor shortcuts** — `Ctrl+S` apply, `Ctrl+Enter` validate, `Ctrl+/` comment, `Ctrl+]`/`Ctrl+[` indent, `Tab`/`Shift+Tab` block indent
-- 🔐 **Basic auth via password hash** — login + ready md5crypt hash in ENV; generate the hash on the **Tools** page. Plus a CSRF guard on mutating requests
+- 🔐 **Login page with a session cookie** — user + ready password hash in ENV, generate the hash on the **Tools** page; repeated wrong passwords lock the login for a while. Plus a CSRF guard on mutating requests
 - 🛟 **Web panel is the foundation** — it stays up even if mihomo can't start on a broken config; a supervisor restarts the core every 5 s, so you can always fix the config in the UI
 - 💾 **Zero flash wear** — the webroot runs from RAM (`/dev/shm`) and every temp/validation file lives in tmpfs
 
@@ -34,21 +34,25 @@
 It edits files on disk and applies the config through mihomo's RESTful API — no container restart needed.
 
 > [!IMPORTANT]
-> The panel is behind HTTP basic auth. **Default is `admin` / `admin` — change it.**
+> The panel asks for a login and password on its own page (no browser basic-auth prompt).
+> **Default is `admin` / `admin` — change it.**
 > *Tools → Password hash*: enter a new password, get the md5 hash, put it into the
-> `BASIC_AUTH_HASH` env. The plaintext password is never stored in env. While the default
-> password is in use the panel shows a warning banner. See [Security](#-security).
+> `WEB_PASSWORD_HASH` env. The plaintext password is never stored in env. While the default
+> password is in use the panel shows a warning banner. The session lives in a cookie until you
+> log out, after 7 idle days, or until the container restarts. See [Security](#-security).
 
 <img width="1264" height="1268" alt="image" src="https://github.com/user-attachments/assets/c14355f8-57f2-4bb2-8535-24f1a22d6f1f" />
+
+> The screenshot shows the previous look of the panel.
 
 **Pages:**
 
 - **YAML config** — one file, navigable by section. The left column lists *Whole config* + every upstream section (`general`, `dns`, `sniffer`, `tun`, `hosts`, `ntp`, `proxies`, `proxy-groups`, `proxy-providers`, `rules`, `rule-providers`, `sub-rules`, `listeners`, `profile`, `experimental`, `tunnels`). *General* aggregates every top-level scalar that doesn't belong to another tab, even if scattered. Empty sections show a placeholder with a starter example.
 - **Pre / Post scripts** — `sh` hooks with syntax check (`sh -n`), enable/disable (`.sh.disabled`), delete. Edits take effect on container restart: running scripts from the UI is deliberately not supported (see [Security](#-security)).
-- **proxy-providers / provider-rules** — YAML/list/mrs file managers, validated with `mihomo -t` / `convert-ruleset`. Binary `.mrs` files are not shown in the editor: the panel offers download, replace-from-disk and delete instead (upload them with the `⭱` button).
-- **Tools** — md5crypt hash for `BASIC_AUTH_HASH`; converters for AmneziaWG/WireGuard `.conf` (including **AWG 3.0/3.1**), TrustTunnel `.toml` and OpenVPN `.ovpn` into a `proxies` block; backup and restore.
+- **proxy-providers / provider-rules** — YAML/list/mrs file managers, validated with `mihomo -t` / `convert-ruleset`. Binary `.mrs` files are not shown in the editor: the panel offers download, replace-from-disk and delete instead (upload them with the upload button).
+- **Tools** — md5crypt hash for `WEB_PASSWORD_HASH`; converters for AmneziaWG/WireGuard `.conf` (including **AWG 3.0/3.1**), TrustTunnel `.toml` and OpenVPN `.ovpn` into a `proxies` block; backup and restore.
 
-**Import / export.** The `⭳` / `⭱` buttons above the file list act on the open file: download it to disk, or load a file from disk into the editor (saving stays a separate, explicit step after validation). For the whole project use *Tools → Backup and restore*:
+**Import / export.** The download / upload buttons in the file list header act on the open file: download it to disk, or load a file from disk into the editor (saving stays a separate, explicit step after validation). For the whole project use *Tools → Backup and restore*:
 
 | Format | Contents | When |
 |---|---|---|
@@ -74,8 +78,8 @@ Restore overwrites files with matching names; `config.yaml` is applied last and 
 ```bash
 docker run -d --name mihomo-ros \
   --network host --cap-add NET_ADMIN --cap-add NET_RAW \
-  -e BASIC_AUTH_USER=admin \
-  -e BASIC_AUTH_HASH='$1$mihomors$BipEGg3TOdgaQSFfGtisO1' \
+  -e WEB_USER=admin \
+  -e WEB_PASSWORD_HASH='$1$mihomors$BipEGg3TOdgaQSFfGtisO1' \
   -v "$PWD/data:/etc/mihomo" \
   ghcr.io/medium1992/mihomo-ros:latest
 # UI:  http://<router-ip>/        (default login admin / admin)
@@ -104,8 +108,8 @@ Then create a veth, mount/env lists and the container (adjust disk/addresses to 
 /container/config/set registry-url=https://ghcr.io tmpdir=usb1/pull
 
 /container/mounts/add list=mihomo-ros src=usb1/mihomo dst=/etc/mihomo
-/container/envs/add list=mihomo-ros key=BASIC_AUTH_USER value=admin
-/container/envs/add list=mihomo-ros key=BASIC_AUTH_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
+/container/envs/add list=mihomo-ros key=WEB_USER value=admin
+/container/envs/add list=mihomo-ros key=WEB_PASSWORD_HASH value="\$1\$mihomors\$BipEGg3TOdgaQSFfGtisO1"
 
 /container/add remote-image=ghcr.io/medium1992/mihomo-ros:latest \
   interface=veth-mihomo root-dir=usb1/mihomo-root \
@@ -120,9 +124,9 @@ Every ENV is about the web panel; the default login/password is `admin` / `admin
 
 | ENV | Default | Description |
 |---|---|---|
-| `BASIC_AUTH_USER` | `admin` | Web panel login. |
-| `BASIC_AUTH_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= hash of `admin`) | **Ready md5crypt hash** (`$1$…`) of the password. Generate yours on the **Tools** page. An empty value means the default, not "no password". |
-| `BASIC_AUTH` | `on` | `off` deliberately opens the panel **with no password**. This is the only way to disable auth. |
+| `WEB_USER` | `admin` | Web panel login. The old name `BASIC_AUTH_USER` still works. |
+| `WEB_PASSWORD_HASH` | `$1$mihomors$BipEGg3TOdgaQSFfGtisO1` (= hash of `admin`) | **Ready password hash**: `$1$` (md5crypt, generated on the **Tools** page), `$5$` or `$6$` (`openssl passwd -5` / `-6`). The old name `BASIC_AUTH_HASH` still works. An empty value means the default, not "no password". |
+| `WEB_AUTH` | `on` | `off` deliberately opens the panel **with no password**. This is the only way to disable the login. The old name `BASIC_AUTH` still works. |
 | `WEB_CSRF` | `on` | `Referer` check on mutating CGI requests. Set `off` if you call the panel's endpoints from your own scripts/curl. |
 
 > Everything else lives in `config.yaml`, not in ENV. The API port and secret are read from it (`external-controller` / `secret`); routing/network is set up by the hook scripts in `scripts/` and `scripts-post/`.
@@ -131,15 +135,21 @@ Every ENV is about the web panel; the default login/password is `admin` / `admin
 
 The panel edits `config.yaml` and `sh` scripts that the container runs **as root** on the router's network. So:
 
-- **Change the default password.** While it is `admin` the panel shows a warning banner and the container logs a `WARNING`. Generate the hash in *Tools → Password hash*; only the hash goes into env. Forgot it? Delete the `BASIC_AUTH_HASH` env and restart — it falls back to `admin`.
-- **The panel runs over plain HTTP**: basic auth and the password you type into the hash generator travel the LAN in the clear (base64). Never expose the container's port `80` to the internet — LAN or VPN only.
-- **CSRF guard.** Every mutating endpoint accepts `POST` only, and only with its own `Referer`. Without it any page open in your browser could write files into the container: HTTP auth is cached per origin and attached even to requests initiated by a foreign site (`SameSite` protects cookies, not basic auth). Disable with `WEB_CSRF=off`.
+- **Change the default password.** While it is `admin` the panel shows a warning banner and the container logs a `WARNING`. Generate the hash in *Tools → Password hash*; only the hash goes into env. Forgot it? Delete the `WEB_PASSWORD_HASH` env and restart — it falls back to `admin`.
+- **Login and sessions.** A CGI script checks the password against the hash from env; after login the browser gets a `sid` cookie (`HttpOnly`, `SameSite=Strict`, 7 idle days). Sessions live in the container's RAM and die with a restart — log in again afterwards. The "выйти" button in the status bar destroys the session. After 5 wrong passwords in a row the login is locked for 30 seconds, and every failure adds a delay of up to 3 seconds.
+- **The panel runs over plain HTTP**: the password you type at login and into the hash generator travels the LAN in the clear. Never expose the container's port `80` to the internet — LAN or VPN only.
+- **CSRF guard.** The `SameSite=Strict` cookie is not sent on requests from foreign sites, and every mutating endpoint additionally accepts `POST` only, and only with its own `Referer`. The second layer can be disabled with `WEB_CSRF=off`.
 - **Scripts cannot be run from the UI.** They can only be syntax-checked (`sh -n`); they execute at container start. That way a single authentication slip is not an instant root shell.
 - **Nothing sensitive is kept in the browser.** The panel never writes to `localStorage`/`sessionStorage`: state lives in the tab and dies with it. The config is always read from the server.
 - **The panel refuses to run in a frame** (clickjacking), and a `Content-Security-Policy` forbids any external loads and inline scripts.
 - **Archive import does not trust the archive**: entries with `..` or absolute paths reject it outright, extraction happens in tmpfs, and only whitelisted directories/extensions are copied into place.
 
-If you need the panel from scripts (curl/automation), use `WEB_CSRF=off`; the `POST`-only rule still applies.
+If you need the panel from scripts (curl/automation): log in once and keep the cookie jar, then send it with every request. The `POST`-only rule still applies; with `WEB_CSRF=off` the `Referer` header is not needed.
+
+```bash
+curl -c jar -H 'Referer: http://<ip>/' --data-binary $'admin\nadmin' http://<ip>/cgi-bin/login
+curl -b jar http://<ip>/cgi-bin/get-config
+```
 
 ## 📁 Layout
 
@@ -152,7 +162,7 @@ If you need the panel from scripts (curl/automation), use `WEB_CSRF=off`; the `P
   ├── scripts-post/              post-start sh hooks
   ├── proxy-providers/           proxy provider files (.yaml)
   └── provider-rules/            rule provider files (.yaml/.list/.mrs)
-/www/                            web panel (index.html + assets + cgi-bin)
+/www/                            web panel (index.html + login.html + assets + cgi-bin)
 /entrypoint.sh                   httpd-from-RAM + mihomo supervisor
 ```
 
@@ -163,6 +173,8 @@ Drop into `/etc/mihomo/` as needed: `geoip.metadb` / `geosite.dat` / `geoip.dat`
 ## 🐳 Architectures & build
 
 `latest` is multi-arch: `amd64` (built as **v3**), `arm64`, `armv7`, `armv5`. For older x86 CPUs pull the `amd64v1` / `amd64v2` tags. `armv5` (which Alpine doesn't publish) is built on a bundled Buildroot rootfs (`rootfs.tar`) instead of Alpine.
+
+> ⚠ **armv5: the web panel does not work.** The busybox httpd in the current `rootfs.tar` is built without CGI (and without basic auth): `/cgi-bin/*` is served as plain text and `POST` returns 501. The mihomo core itself runs fine. The only fix is rebuilding the rootfs with `CONFIG_FEATURE_HTTPD_CGI=y`.
 
 ```bash
 docker build -t mihomo-ros .                                  # amd64 = v3 by default

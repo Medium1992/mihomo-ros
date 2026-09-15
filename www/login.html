@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="same-origin">
+<title>mihomo-ros · вход</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body class="login-body">
+<main class="login">
+  <div class="login-host">
+    <span class="login-title"><span class="login-app">mihomo-ros</span><span class="login-at"> @ </span><span id="loginHost"></span></span>
+    <button type="submit" form="loginForm" class="btn primary" id="loginBtn">Войти</button>
+  </div>
+  <form class="login-form" id="loginForm" autocomplete="on" novalidate>
+    <label class="login-row" for="loginUser"><span class="login-label">login:</span>
+      <input id="loginUser" name="username" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label class="login-row" for="loginPass"><span class="login-label">password:</span>
+      <input id="loginPass" name="password" type="password" autocomplete="current-password"></label>
+  </form>
+  <p class="login-msg" id="loginMsg" aria-live="polite"></p>
+  <p class="login-hint"><kbd>Enter</kbd> или кнопка «Войти» · <kbd>Tab</kbd> следующее поле</p>
+</main>
+<script src="/assets/login.js"></script>
+</body>
+</html>
