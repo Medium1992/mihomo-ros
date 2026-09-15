@@ -9,7 +9,7 @@
 #  Порядок:
 #    1) подготовка рабочих папок + сид дефолтного конфига
 #    2) PRE-скрипты из /etc/mihomo/scripts/      (до старта mihomo)
-#    3) basic auth для вебки
+#    3) вход в веб-панель (cookie-сессии, хеш пароля из env)
 #    4) старт mihomo под супервизором (вторичен, авто-перезапуск)
 #    5) POST-скрипты из /etc/mihomo/scripts-post/ (после старта mihomo)
 #    6) старт веб-панели (httpd) — контейнер живёт, пока жива вебка
@@ -27,17 +27,24 @@ HTTPD_CONF="/etc/httpd.conf"
 SCRIPTS_DIR="$MIHOMO_DIR/scripts"           # pre-start hooks
 SCRIPTS_POST_DIR="$MIHOMO_DIR/scripts-post" # post-start hooks
 
-# basic auth вебки: логин + ГОТОВЫЙ md5-хеш ($1$...) пароля.
-# Хеш генерируется на странице «Инструменты» и кладётся в env BASIC_AUTH_HASH.
-# По умолчанию: admin / хеш пароля "admin".
-# Пустой USER/HASH даёт дефолт, а не отключение auth: выключить можно только
-# явным BASIC_AUTH=off.
-BASIC_AUTH_HASH_DEFAULT='$1$mihomors$BipEGg3TOdgaQSFfGtisO1'
-BASIC_AUTH="${BASIC_AUTH:-on}"
-BASIC_AUTH_USER="${BASIC_AUTH_USER:-admin}"
-BASIC_AUTH_HASH="${BASIC_AUTH_HASH:-$BASIC_AUTH_HASH_DEFAULT}"
-[ -n "$BASIC_AUTH_USER" ] || BASIC_AUTH_USER=admin
-[ -n "$BASIC_AUTH_HASH" ] || BASIC_AUTH_HASH="$BASIC_AUTH_HASH_DEFAULT"
+# вход в веб-панель: логин + ГОТОВЫЙ хеш пароля ($1$ / $5$ / $6$).
+# Новые имена WEB_*; старые BASIC_AUTH_* читаются как алиасы. Пустое значение
+# даёт дефолт, а не отключение входа: выключить можно только явным WEB_AUTH=off.
+# shellcheck disable=SC2016
+WEB_PASSWORD_HASH_DEFAULT='$1$mihomors$BipEGg3TOdgaQSFfGtisO1'
+pick_env() {   # $1 новое значение, $2 алиас, $3 дефолт -> первое непустое
+  if [ -n "$1" ]; then printf '%s' "$1"
+  elif [ -n "$2" ]; then printf '%s' "$2"
+  else printf '%s' "$3"; fi
+}
+WEB_AUTH="$(pick_env "${WEB_AUTH:-}" "${BASIC_AUTH:-}" on)"
+WEB_USER="$(pick_env "${WEB_USER:-}" "${BASIC_AUTH_USER:-}" admin)"
+WEB_PASSWORD_HASH="$(pick_env "${WEB_PASSWORD_HASH:-}" "${BASIC_AUTH_HASH:-}" "$WEB_PASSWORD_HASH_DEFAULT")"
+[ "$WEB_AUTH" = "off" ] || WEB_AUTH=on
+WEB_AUTH_DEFAULT=0
+[ "$WEB_PASSWORD_HASH" = "$WEB_PASSWORD_HASH_DEFAULT" ] && WEB_AUTH_DEFAULT=1
+SESSION_DIR=/dev/shm/sessions
+export WEB_AUTH WEB_USER WEB_PASSWORD_HASH WEB_AUTH_DEFAULT SESSION_DIR
 
 # ---- 1. folders + seed config --------------------------------
 mkdir -p "$SCRIPTS_DIR" "$SCRIPTS_POST_DIR" \
@@ -89,29 +96,31 @@ build_webroot() {
       *)  chmod 0755 "$_f" 2>/dev/null || true ;;
     esac
   done
-  for item in index.html assets; do
-    [ -e "$WEB_ROOT/$item" ] && ln -sfn "$WEB_ROOT/$item" "$WEBROOT/$item"
-  done
+  # статика — симлинк на /www; index.html в вебрут НЕ кладём: тогда httpd
+  # отдаёт «/» через /cgi-bin/index.cgi, который решает, показать вход или панель
+  ln -sfn "$WEB_ROOT/assets" "$WEBROOT/assets"
+  # сессии панели: живут в ОЗУ, умирают с контейнером
+  rm -rf "$SESSION_DIR" /dev/shm/auth-fail
+  mkdir -p "$SESSION_DIR" && chmod 700 "$SESSION_DIR"
 }
 build_webroot
 
 # ---- 2. PRE-start scripts (before mihomo) --------------------
 run_scripts "$SCRIPTS_DIR" pre
 
-# ---- 3. basic auth for the web UI ----------------------------
-# httpd читает auth из httpd.conf: "/:user:pass" закрывает весь сайт.
-# Файл вне вебрута и 600 — в нём хеш пароля.
-: > "$HTTPD_CONF"
+# ---- 3. вход в веб-панель ------------------------------------
+# Basic auth больше нет: в httpd.conf только MIME-тип для шрифта (чтобы старый
+# файл не включил auth, он переписывается целиком), вход проверяют CGI по cookie
+# сессии. Хеш пароля CGI берут из окружения.
+printf '.woff2:font/woff2\n' > "$HTTPD_CONF"
 chmod 600 "$HTTPD_CONF" 2>/dev/null || true
-if [ "$BASIC_AUTH" = "off" ]; then
-  log "WARNING: basic auth DISABLED by BASIC_AUTH=off — вебка (и правка root-скриптов) открыта всем в сети"
+if [ "$WEB_AUTH" = "off" ]; then
+  log "WARNING: вход в панель ВЫКЛЮЧЕН (WEB_AUTH=off) — вебка (и правка root-скриптов) открыта всем в сети"
 else
-  # хеш уже готов ($1$...) — пишем как есть, без openssl
-  echo "/:$BASIC_AUTH_USER:$BASIC_AUTH_HASH" >> "$HTTPD_CONF"
-  log "basic auth enabled for user '$BASIC_AUTH_USER' (hash)"
-  if [ "$BASIC_AUTH_HASH" = "$BASIC_AUTH_HASH_DEFAULT" ]; then
+  log "web UI login enabled for user '$WEB_USER'"
+  if [ "$WEB_AUTH_DEFAULT" = 1 ]; then
     log "WARNING: используется ДЕФОЛТНЫЙ пароль вебки (admin) — смени его:"
-    log "WARNING:   Инструменты → Хеш-пароль, затем env BASIC_AUTH_HASH"
+    log "WARNING:   Инструменты → Хеш пароля, затем env WEB_PASSWORD_HASH"
   fi
 fi
 
@@ -119,6 +128,7 @@ fi
 # Просто выходим из PID 1 — runtime сам SIGKILL'ит остальные процессы
 # мгновенно. НЕ шлём mihomo SIGTERM (его graceful-shutdown долгий).
 SHUTTING_DOWN=0
+# shellcheck disable=SC2329  # вызывается через trap
 fast_shutdown() {
   trap - TERM INT
   [ "$SHUTTING_DOWN" = 1 ] && exit 0

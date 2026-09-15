@@ -1,4 +1,5 @@
 /* ── mihomo-ros web UI ─────────────────────────────────────── */
+/* global ui */
 (function () {
   "use strict";
 
@@ -7,7 +8,7 @@
   if (window.top !== window.self) {
     document.documentElement.textContent =
       "mihomo-ros: страница не может быть открыта во фрейме";
-    try { window.top.location = window.self.location; } catch (_) {}
+    try { window.top.location = window.self.location; } catch { /* ignore */ }
     return;
   }
 
@@ -18,7 +19,6 @@
   const hlCode = hl ? hl.querySelector("code") : null;
   const consoleBody = $("consoleBody");
   const consoleTitle = $("consoleTitle");
-  const toast = $("toast");
 
   /* ── мини-подсветка YAML / sh (для слоя #hl под textarea) ─── */
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -26,7 +26,7 @@
   // YAML: строки, комментарии, ключи; bool — когда это всё значение; n — чистое
   // целое (не часть IP/диапазона/версии, т.е. не примыкает к . - /); val —
   // прочие скалярные значения (после "ключ: " или "- "), не начиная со списка [.
-  const YAML_RE = /(?<s>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')|(?<c>(?:^|[ \t])#[^\n]*)|(?<k>^[ \t]*(?:- )*[\w.\-\/]+(?=:(?:\s|$)))|(?<b>(?<=[:\-][ \t])(?:true|false|null|yes|no|on|off)(?=[ \t]*(?:#|$)))|(?<n>(?<![\w.\/-])\d+(?:-\d+)*(?![\w.\/-]))|(?<val>(?<=[:\-\[,][ \t]*)[^\s,\[\]]+)/gm;
+  const YAML_RE = /(?<s>"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')|(?<c>(?:^|[ \t])#[^\n]*)|(?<k>^[ \t]*(?:- )*[\w.\-/]+(?=:(?:\s|$)))|(?<b>(?<=[:-][ \t])(?:true|false|null|yes|no|on|off)(?=[ \t]*(?:#|$)))|(?<n>(?<![\w./-])\d+(?:-\d+)*(?![\w./-]))|(?<val>(?<=[:\-[,][ \t]*)[^\s,[\]]+)/gm;
   // sh: ключевые слова = только управляющие конструкции; команды (первое слово
   // строки, не keyword) — отдельным классом cmd. Плюс строки, переменные, комменты.
   const SH_KW = "if|then|else|elif|fi|for|in|do|done|while|until|case|esac|function|return|break|continue|exit|select";
@@ -97,7 +97,7 @@
     "provider-rules": {
       kind: "prov", title: "provider-rules", dir: "provider-rules",
       hint: "<code>/etc/mihomo/provider-rules/</code> · файлы провайдеров правил"
-          + " · готовые <code>.mrs</code> — кнопкой «⭱ загрузить»",
+          + " · готовые <code>.mrs</code> — кнопкой «загрузить»",
       doc: "https://wiki.metacubex.one/ru/config/rule-providers/content/",
       tpl: "payload:\n  - \n", newName: "my-rules.yaml",
     },
@@ -105,6 +105,7 @@
 
   let view = "yaml";        // "yaml" | <resource key>
   let dirty = false;
+  function setDirty(v) { dirty = v; $("tabDirty").hidden = !v; }
   let busy = false;
   let curFile = null;       // selected file (resource views)
   const store = {};         // per-view buffers
@@ -250,11 +251,12 @@
     });
   }
   code.addEventListener("input", () => {
-    dirty = true; renderGutter();
+    setDirty(true); renderGutter();
     if (view === "yaml") {
       if (cfgSel === null) cfgFull = code.value;
       else if (cfgSel === "general") cfgFull = rebuildFromGeneral(code.value);
       else cfgFull = spliceSection(code.value);
+      refreshSectionPresence();
     }
   });
   code.addEventListener("scroll", syncScroll);
@@ -263,17 +265,12 @@
   function setConsole(title, text, kind) {
     consoleTitle.textContent = title;
     consoleBody.textContent = text || "—";
-    consoleBody.className = "console-body " + (kind || "muted");
+    consoleBody.className = "output-body " + (kind || "muted");
   }
-  function showToast(text, kind) {
-    toast.textContent = text;
-    toast.className = "toast show " + (kind || "");
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => (toast.className = "toast"), 3200);
-  }
+  function showToast(text, kind) { ui.toast(text, kind); }
   function setBusy(b) {
     busy = b;
-    document.querySelectorAll(".topbar-actions .btn, .files .btn, .tool-card .btn")
+    document.querySelectorAll(".tabbar-actions .btn, .explorer .ibtn, .tool-card .btn")
       .forEach((el) => (el.disabled = b));
     if (!b) syncBinButtons();   // разблокировка не должна включать «Сохранить» у .mrs
   }
@@ -281,15 +278,21 @@
     $("prvCheckBtn").disabled = binMode;
     $("prvSaveBtn").disabled = binMode;
   }
+  // сессия истекла или её нет: index.cgi покажет вход
+  function gotoLogin() { location.replace("/"); }
+  function authCheck(r) { if (r.status === 401) { gotoLogin(); throw new Error("нужен вход"); } return r; }
   async function jsonFetch(url, opts) {
-    const r = await fetch(url, Object.assign({ cache: "no-store" }, opts));
+    const r = authCheck(await fetch(url, Object.assign({ cache: "no-store" }, opts)));
     const t = await r.text();
-    try { return JSON.parse(t); }
-    catch (_) {
+    let j;
+    try { j = JSON.parse(t); }
+    catch {
       throw new Error("сервер вернул не JSON (HTTP " + r.status + "). "
         + "Возможно, CGI без +x — перезапусти контейнер. "
         + t.replace(/<[^>]*>/g, " ").trim().slice(0, 120));
     }
+    if (j && j.auth === false) { gotoLogin(); throw new Error("нужен вход"); }
+    return j;
   }
   const txtPost = (body) => ({ method: "POST", headers: { "Content-Type": "text/plain" }, body });
 
@@ -297,22 +300,15 @@
   // флаги из /cgi-bin/status (он читает реальный /etc/httpd.conf)
   function renderAuthWarn(j) {
     const bar = $("authWarn");
-    if (!bar) return;
     if (j && j.authOff) {
       bar.className = "authwarn";
-      bar.textContent = "Вебка открыта БЕЗ пароля (BASIC_AUTH=off). "
-        + "Любой в сети роутера может править конфиг и скрипты, "
-        + "которые выполняются от root.";
+      bar.textContent = "Вход выключен (WEB_AUTH=off): любой в сети роутера может править конфиг и скрипты, которые выполняются от root.";
       bar.hidden = false;
     } else if (j && j.authDefault) {
       bar.className = "authwarn warn";
-      bar.textContent = "Используется дефолтный пароль вебки (admin). "
-        + "Смени его: Инструменты → Хеш-пароль, полученный хеш — в env "
-        + "BASIC_AUTH_HASH, затем рестарт контейнера.";
+      bar.textContent = "Пароль панели по умолчанию (admin). Смените его: Инструменты → Хеш пароля, хеш в env WEB_PASSWORD_HASH, затем рестарт контейнера.";
       bar.hidden = false;
-    } else {
-      bar.hidden = true;
-    }
+    } else bar.hidden = true;
   }
 
   async function refreshStatus() {
@@ -321,27 +317,38 @@
       renderAuthWarn(j);
       $("statusDot").className = "dot " + (j.running ? "up" : "down");
       $("statusText").textContent = j.running ? "ядро запущено" : "ядро недоступно";
-      $("version").textContent = j.version || "—";
-      if (j.config && view === "yaml" && cfgSel === null) $("cfgPath").textContent = j.config;
+      $("status").title = (j.running ? "ядро запущено" : "ядро недоступно")
+        + (j.version ? " · " + j.version : "") + (j.apiPort ? " · api :" + j.apiPort : "");
+      // в статусной строке только номер версии, полная строка `mihomo -v` в тултипе
+      const vm = (j.version || "").match(/v\d+(?:\.\d+)+/);
+      $("version").textContent = vm ? vm[0] : (j.version || "—");
+      $("version").title = j.version || "";
+      const ap = $("apiPort"); ap.textContent = j.apiPort ? "api :" + j.apiPort : ""; ap.hidden = !j.apiPort;
+      $("sbUser").textContent = j.user || "—";
+      $("logoutBtn").hidden = !!j.authOff;
+      $("logoutBtn").title = "Выйти из панели (" + (j.user || "—") + ")";
       // ссылка на дашборд mihomo (external-ui): тот же хост, порт API ядра
-      const ui = $("mihomoUi");
+      const dash = $("mihomoUi");
       if (j.running && j.ui && j.apiPort) {
-        ui.href = location.protocol + "//" + location.hostname + ":" + j.apiPort + "/ui/";
-        ui.hidden = false;
-      } else {
-        ui.hidden = true;
-      }
-    } catch (_) {
+        dash.href = location.protocol + "//" + location.hostname + ":" + j.apiPort + "/ui/";
+        dash.hidden = false;
+      } else dash.hidden = true;
+    } catch {
       $("statusDot").className = "dot down";
       $("statusText").textContent = "нет связи";
+      $("status").title = "нет связи с панелью";
       $("mihomoUi").hidden = true;
     }
+  }
+  async function logout() {
+    try { await fetch("/cgi-bin/logout", { method: "POST", cache: "no-store" }); } catch { /* ignore */ }
+    gotoLogin();
   }
 
   /* ════════════════ YAML view ════════════════ */
   async function loadConfig() {
     try {
-      const r = await fetch("/cgi-bin/get-config", { cache: "no-store" });
+      const r = authCheck(await fetch("/cgi-bin/get-config", { cache: "no-store" }));
       const body = await r.text();
       // если CGI не исполнился (нет +x, раздача статикой), тут будет текст
       // скрипта или страница ошибки — в редактор такое не пускаем
@@ -352,11 +359,11 @@
       }
       // нормализуем хвост: один завершающий перевод строки, без пустых строк
       cfgFull = body.replace(/[ \t\r\n]+$/, "") + "\n";
-      dirty = false;
+      setDirty(false);
       buildSectionList();
       if (cfgSel !== null && sectionPresent(cfgSel)) selectSection(cfgSel);
       else selectWhole();
-      setConsole("Консоль", "Конфиг загружен. Слева — разделы одного файла.", "muted");
+      setConsole("Вывод", "Конфиг загружен. Слева — разделы одного файла.", "muted");
     } catch (e) { setConsole("Ошибка", "Не удалось загрузить конфиг: " + e, "err"); }
   }
 
@@ -423,6 +430,16 @@
       ul.appendChild(li);
     });
   }
+  // обновить метки «пусто» слева без перестройки списка (вызывается на каждый ввод)
+  function refreshSectionPresence() {
+    document.querySelectorAll("#filesList .file-item[data-sec]").forEach((li) => {
+      const id = li.dataset.sec;
+      if (id === "whole") return;
+      const present = sectionPresent(id);
+      li.classList.toggle("absent", !present);
+      li.querySelector(".file-tag").textContent = present ? "" : "пусто";
+    });
+  }
   function markYamlSel() {
     const cur = cfgSel === null ? "whole" : cfgSel;
     document.querySelectorAll("#filesList .file-item")
@@ -445,7 +462,7 @@
     cfgSel = null;
     code.placeholder = "";
     code.value = cfgFull; renderGutter();
-    $("cfgPath").textContent = "/etc/mihomo/config.yaml";
+    $("cfgPath").textContent = "config.yaml";
     renderSecDoc(null);
     markYamlSel();
   }
@@ -514,7 +531,7 @@
     try {
       const j = await jsonFetch("/cgi-bin/save-config?force=" + (hard ? "true" : "false"), txtPost(cfgFull));
       if (j.ok) {
-        dirty = false;
+        setDirty(false);
         if (j.stage === "restart") {
           // сменили external-controller/secret -> ядро перезапускается супервизором
           setConsole("Ядро перезапускается", j.output || "Перезапуск ядра…", "ok");
@@ -540,7 +557,7 @@
 
   async function loadFileList() {
     let list = [];
-    try { list = await jsonFetch("/cgi-bin/list-files?" + qs()); } catch (_) {}
+    try { list = await jsonFetch("/cgi-bin/list-files?" + qs()); } catch { /* ignore */ }
     fileMeta = {};
     list.forEach((it) => { fileMeta[it.file] = { size: it.size, enabled: it.enabled }; });
     const ul = $("filesList"); ul.innerHTML = "";
@@ -578,11 +595,11 @@
 
   async function openFile(file) {
     if (dirty && curFile && curFile !== file &&
-        !confirm("Изменения не сохранены. Открыть другой файл?")) return;
+        !(await ui.confirm({ title: "Изменения не сохранены", text: "Открыть другой файл и потерять правки?", okText: "Открыть", danger: true }))) return;
     if (isBin(file)) {
-      curFile = file; dirty = false;
+      curFile = file; setDirty(false);
       setBinMode(true, file);
-      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + file;
+      $("cfgPath").textContent = res().dir + "/" + file;
       setResPath(file); markSel();
       setConsole("Двоичный файл", file + " — редактирование недоступно, "
         + "доступны скачивание, замена и удаление.", "muted");
@@ -590,11 +607,11 @@
     }
     setBinMode(false);
     try {
-      const r = await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)), { cache: "no-store" });
+      const r = authCheck(await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)), { cache: "no-store" }));
       if (!r.ok) throw new Error("get-file вернул HTTP " + r.status);
       code.value = await r.text();
-      curFile = file; dirty = false; renderGutter();
-      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + file;
+      curFile = file; setDirty(false); renderGutter();
+      $("cfgPath").textContent = res().dir + "/" + file;
       setResPath(file);
       setConsole("Файл", file, "muted"); markSel();
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
@@ -606,7 +623,10 @@
     setBusy(true);
     try {
       const j = await jsonFetch("/cgi-bin/save-file?" + qs("&name=" + encodeURIComponent(curFile)), txtPost(code.value));
-      if (j.ok) { dirty = false; setConsole("Сохранено", curFile, "ok"); showToast("Сохранено ✓", "ok"); loadFileList(); }
+      if (j.ok) {
+        setDirty(false); $("cfgPath").textContent = res().dir + "/" + curFile;
+        setConsole("Сохранено", curFile, "ok"); showToast("Сохранено ✓", "ok"); loadFileList();
+      }
       else { setConsole("Ошибка", j.output || "unknown", "err"); showToast("Не сохранено ✗", "err"); }
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
     finally { setBusy(false); }
@@ -634,7 +654,7 @@
         curFile = j.file;
         setConsole("Скрипт", (j.enabled ? "включён: " : "выключен: ") + j.file, "ok");
         showToast(j.enabled ? "Включён ✓" : "Выключен", "ok");
-        $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + j.file;
+        $("cfgPath").textContent = res().dir + "/" + j.file;
         loadFileList();
       } else { setConsole("Ошибка", j.output || "unknown", "err"); }
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
@@ -643,30 +663,30 @@
 
   async function deleteFile() {
     if (busy || !curFile) { if (!curFile) showToast("Выбери файл", "err"); return; }
-    if (!confirm("Удалить " + curFile + "?")) return;
+    if (!(await ui.confirm({ title: "Удалить " + curFile + "?", text: "Файл будет удалён с диска контейнера.", okText: "Удалить", danger: true }))) return;
     setBusy(true);
     try {
       const j = await jsonFetch("/cgi-bin/delete-file?" + qs("&name=" + encodeURIComponent(curFile)), { method: "POST" });
       if (j.ok) {
         showToast("Удалён", "ok");
         setBinMode(false);
-        curFile = null; code.value = ""; dirty = false; renderGutter();
-        $("cfgPath").textContent = ""; setResPath(null);
-        setConsole("Консоль", "Файл удалён.", "muted"); loadFileList();
+        curFile = null; code.value = ""; setDirty(false); renderGutter();
+        $("cfgPath").textContent = "файл не выбран"; setResPath(null);
+        setConsole("Вывод", "Файл удалён.", "muted"); loadFileList();
       } else { setConsole("Ошибка", j.output || "unknown", "err"); }
     } catch (e) { setConsole("Ошибка", String(e), "err"); }
     finally { setBusy(false); }
   }
 
-  function newFile() {
+  async function newFile() {
     const r = res();
-    let name = prompt("Имя нового файла:", r.newName);
-    if (!name) return;
-    name = name.trim();
-    if (!/^[A-Za-z0-9._-]+$/.test(name)) { showToast("Недопустимое имя", "err"); return; }
+    const name0 = await ui.prompt({ title: "Новый файл", label: "Имя файла", value: r.newName, okText: "Создать",
+      validate: (v) => /^[A-Za-z0-9._-]+$/.test(v.trim()) ? "" : "Только латиница, цифры, точка, дефис и подчёркивание" });
+    if (name0 === null) return;
+    let name = name0.trim();
     if (isBin(name)) {
       setConsole("Так не получится", ".mrs — двоичный формат, вручную его не создать. "
-        + "Готовый файл залей кнопкой «⭱ загрузить», либо укажи в конфиге "
+        + "Готовый файл залей кнопкой «загрузить», либо укажи в конфиге "
         + "rule-provider с format: mrs и url — mihomo скачает его сам.", "err");
       showToast(".mrs нужно загрузить файлом", "err");
       return;
@@ -675,8 +695,8 @@
     setBinMode(false);
     curFile = name;
     code.value = r.tpl;
-    dirty = true; renderGutter();
-    $("cfgPath").textContent = "/etc/mihomo/" + r.dir + "/" + name + " (не сохранён)";
+    setDirty(true); renderGutter();
+    $("cfgPath").textContent = r.dir + "/" + name + " (не сохранён)";
     setResPath(name);
     setConsole("Новый файл", "Отредактируй и нажми «Сохранить».", "muted");
     code.focus();
@@ -740,8 +760,8 @@
   async function downloadBinary(file) {
     setBusy(true);
     try {
-      const r = await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)),
-        { cache: "no-store" });
+      const r = authCheck(await fetch("/cgi-bin/get-file?" + qs("&name=" + encodeURIComponent(file)),
+        { cache: "no-store" }));
       if (!r.ok) throw new Error("HTTP " + r.status);
       saveBlob(file, await r.blob());
       showToast(file + " скачан", "ok");
@@ -751,10 +771,10 @@
 
   function uploadCurrent() {
     if (view === "yaml") {
-      pickFile(".yaml,.yml,text/*", (text) => {
-        if (dirty && !confirm("Изменения не сохранены. Заменить содержимое редактора файлом с диска?")) return;
+      pickFile(".yaml,.yml,text/*", async (text) => {
+        if (dirty && !(await ui.confirm({ title: "Изменения не сохранены", text: "Заменить содержимое редактора файлом с диска?", okText: "Заменить", danger: true }))) return;
         cfgFull = String(text).replace(/\r\n/g, "\n").replace(/[ \t\r\n]+$/, "") + "\n";
-        dirty = true;
+        setDirty(true);
         buildSectionList(); selectWhole();
         setConsole("Файл загружен", "Содержимое подставлено в редактор, но НЕ сохранено. "
           + "Нажми «Проверить», затем «Применить».", "muted");
@@ -770,12 +790,12 @@
         showToast("Недопустимое имя или расширение для этого раздела", "err"); return;
       }
       if (isBin(name)) { await uploadBinary(name, buf); return; }
-      if (dirty && !confirm("Изменения не сохранены. Заменить содержимое редактора файлом с диска?")) return;
+      if (dirty && !(await ui.confirm({ title: "Изменения не сохранены", text: "Заменить содержимое редактора файлом с диска?", okText: "Заменить", danger: true }))) return;
       setBinMode(false);
       curFile = name;
       code.value = new TextDecoder().decode(buf).replace(/\r\n/g, "\n");
-      dirty = true; renderGutter(); setResPath(name); markSel();
-      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + name + " (не сохранён)";
+      setDirty(true); renderGutter(); setResPath(name); markSel();
+      $("cfgPath").textContent = res().dir + "/" + name + " (не сохранён)";
       setConsole("Файл загружен", name + " подставлен в редактор, но НЕ сохранён. "
         + "Нажми «Сохранить».", "muted");
       showToast("Загружено в редактор", "ok");
@@ -784,8 +804,7 @@
 
   // в редактор не положить, поэтому пишем сразу — «Сохранить» для него нет
   async function uploadBinary(name, buf) {
-    if (!confirm("Записать " + name + " (" + fmtSize(buf.byteLength) + ") в "
-        + res().dir + "/?\nФайл с таким именем будет перезаписан.")) return;
+    if (!(await ui.confirm({ title: "Записать " + name + "?", text: fmtSize(buf.byteLength) + " в " + res().dir + "/. Файл с таким именем будет перезаписан.", okText: "Записать" }))) return;
     setBusy(true);
     try {
       const j = await jsonFetch("/cgi-bin/save-file?" + qs("&name=" + encodeURIComponent(name)), {
@@ -794,10 +813,10 @@
         body: buf,
       });
       if (!j.ok) { setConsole("Ошибка", j.output || "unknown", "err"); showToast("Не записан", "err"); return; }
-      dirty = false; curFile = name;
+      setDirty(false); curFile = name;
       await loadFileList();
       setBinMode(true, name);
-      $("cfgPath").textContent = "/etc/mihomo/" + res().dir + "/" + name;
+      $("cfgPath").textContent = res().dir + "/" + name;
       setResPath(name); markSel();
       setConsole("Записан", name + " — " + fmtSize(buf.byteLength)
         + ". Путь для конфига указан над панелью.", "ok");
@@ -842,15 +861,15 @@
     try {
       const files = {};
       let bin = 0;
-      const r = await fetch("/cgi-bin/get-config", { cache: "no-store" });
+      const r = authCheck(await fetch("/cgi-bin/get-config", { cache: "no-store" }));
       files["config.yaml"] = await r.text();
       for (const dir of BK_DIRS) {
         let list = [];
         try { list = await jsonFetch("/cgi-bin/list-files?dir=" + encodeURIComponent(dir)); }
-        catch (_) { continue; }
+        catch { continue; }
         for (const it of list) {
-          const fr = await fetch("/cgi-bin/get-file?dir=" + encodeURIComponent(dir)
-            + "&name=" + encodeURIComponent(it.file), { cache: "no-store" });
+          const fr = authCheck(await fetch("/cgi-bin/get-file?dir=" + encodeURIComponent(dir)
+            + "&name=" + encodeURIComponent(it.file), { cache: "no-store" }));
           if (isBin(it.file)) {
             files[dir + "/" + it.file] =
               { encoding: "base64", data: b64FromBuf(await fr.arrayBuffer()) };
@@ -876,13 +895,12 @@
     pickFile(".json,application/json", async (text) => {
       let bundle;
       try { bundle = JSON.parse(String(text)); }
-      catch (_) { bkLog("Это не JSON."); showToast("Не JSON", "err"); return; }
+      catch { bkLog("Это не JSON."); showToast("Не JSON", "err"); return; }
       if (!bundle || bundle.format !== "mihomo-ros-backup" || !bundle.files) {
         bkLog("Не похоже на бандл mihomo-ros (нет format/files)."); showToast("Не тот формат", "err"); return;
       }
       const paths = Object.keys(bundle.files);
-      if (!confirm("Восстановить " + paths.length + " файлов из бандла?\n"
-          + "Файлы с такими же именами будут перезаписаны.")) return;
+      if (!(await ui.confirm({ title: "Восстановить " + paths.length + " файлов из бандла?", text: "Файлы с такими же именами будут перезаписаны.", okText: "Восстановить", danger: true }))) return;
 
       setBusy(true);
       const lines = [];
@@ -936,7 +954,7 @@
 
   async function importTar() {
     pickFile(".tar", async (buf) => {
-      if (!confirm("Восстановить файлы из архива? Файлы с такими же именами будут перезаписаны.")) return;
+      if (!(await ui.confirm({ title: "Восстановить файлы из архива?", text: "Файлы с такими же именами будут перезаписаны.", okText: "Восстановить", danger: true }))) return;
       setBusy(true); bkLog("Распаковываю…");
       try {
         const j = await jsonFetch("/cgi-bin/import-all", {
@@ -955,18 +973,28 @@
   // switchView вернёт устаревший текст
   async function reloadData() {
     Object.keys(store).forEach((k) => { delete store[k]; });
-    dirty = false;
+    setDirty(false);
     if (view === "yaml") {
       await loadConfig();
     } else if (isRes(view)) {
       setBinMode(false);
       curFile = null; code.value = ""; renderGutter();
-      $("cfgPath").textContent = ""; setResPath(null);
-      setConsole("Консоль", "Данные перечитаны. Выбери файл слева.", "muted");
+      $("cfgPath").textContent = "файл не выбран"; setResPath(null);
+      setConsole("Вывод", "Данные перечитаны. Выбери файл слева.", "muted");
       await loadFileList();
     }
     await refreshStatus();
   }
+
+  /* ── панель действий: только иконки или иконки с подписями ─ */
+  function setActExpanded(on) {
+    document.body.classList.toggle("act-expanded", on);
+    const b = $("actToggle");
+    b.setAttribute("aria-expanded", String(on));
+    b.title = on ? "Свернуть панель" : "Развернуть панель";
+    paintHL();   // ширина редактора изменилась — пересчёт компенсации скроллбаров
+  }
+  document.querySelector(".act").addEventListener("transitionend", (e) => { if (e.propertyName === "width") paintHL(); });
 
   /* ── view switching ─────────────────────────────────────── */
   function snapshot() {
@@ -974,14 +1002,12 @@
     else store[view] = { text: code.value, dirty, cfgPath: $("cfgPath").textContent, curFile };
   }
   function applyChrome(v) {
-    const yaml = v === "yaml";
-    const tools = v === "tools";
+    const yaml = v === "yaml", tools = v === "tools";
     const kind = isRes(v) ? RES[v].kind : null;
-    document.querySelectorAll(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.view === v));
+    document.querySelectorAll(".act-btn[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
     $("actionsYaml").hidden = !yaml;
     $("actionsScript").hidden = kind !== "sh";
     $("actionsProvider").hidden = kind !== "prov";
-    $("filesPanel").hidden = false;       // колонка видна всегда
     $("filesTools").hidden = tools;       // у инструментов нет файловых операций
     $("newBtn").hidden = yaml;            // у конфига нет «создать файл»
     $("editorWrap").hidden = tools;       // у инструментов своя панель вместо редактора
@@ -989,7 +1015,7 @@
     $("console").hidden = tools;
     $("toolsPane").hidden = !tools;
     $("resPath").hidden = true;           // строка пути покажется при выборе файла
-    // верхняя строка-шпаргалка: для конфига — по разделам (renderSecDoc),
+    // инфостроки: для конфига — по разделам (renderSecDoc),
     // для proxy-providers/provider-rules — ссылка на доку, иначе скрыта
     const prov = kind === "prov";
     if (prov) {
@@ -999,12 +1025,12 @@
     } else {
       $("secDoc").hidden = !yaml;          // yaml: контент ставит renderSecDoc
     }
-    const title = yaml ? "config.yaml" : tools ? "Инструменты" : RES[v].title;
-    $("viewTitle").textContent = title;
-    $("filesTitle").textContent = title;
+    $("filesTitle").textContent = yaml ? "Разделы" : tools ? "Инструменты" : RES[v].title;
+    $("filesSub").textContent = yaml ? "config.yaml" : (tools || RES[v].title === RES[v].dir) ? "" : RES[v].dir + "/";
     $("filesHint").innerHTML = yaml ? "разделы одного файла" : tools ? "" : RES[v].hint;
+    if (tools) $("cfgPath").textContent = "Инструменты";
     $("consoleHint").textContent = (yaml ? "Ctrl+S применить · Ctrl+Enter проверить" : "Ctrl+S сохранить · Ctrl+Enter проверить")
-      + " · Ctrl+/ коммент · Ctrl+]/[ отступ";
+      + " · Ctrl+/ комментарий · Ctrl+] и Ctrl+[ отступ";
   }
   function switchView(v) {
     if (v === view) return;
@@ -1019,32 +1045,32 @@
     const s = store[v];
     if (yaml) {
       if (s) {
-        cfgFull = s.full; cfgSel = s.sel; dirty = s.dirty;
+        cfgFull = s.full; cfgSel = s.sel; setDirty(s.dirty);
         buildSectionList();
         (cfgSel !== null && sectionPresent(cfgSel)) ? selectSection(cfgSel) : selectWhole();
-        setConsole("Консоль", "YAML-конфиг — выбери раздел слева или редактируй весь файл.", "muted");
+        setConsole("Вывод", "YAML-конфиг — выбери раздел слева или редактируй весь файл.", "muted");
         refreshStatus();
       } else { cfgSel = null; loadConfig(); refreshStatus(); }
     } else if (tools) {
       buildToolsList();
       selectTool(curTool);
     } else if (s) {
-      code.value = s.text; dirty = s.dirty; curFile = s.curFile || null;
+      code.value = s.text; setDirty(s.dirty); curFile = s.curFile || null;
       $("cfgPath").textContent = s.cfgPath || "";
       renderGutter(); setResPath(curFile);
       // список до setBinMode: размер берётся из fileMeta
       loadFileList().then(() => { if (isBin(curFile)) setBinMode(true, curFile); });
     } else {
-      dirty = false; curFile = null; $("cfgPath").textContent = "";
+      setDirty(false); curFile = null; $("cfgPath").textContent = "файл не выбран";
       code.value = ""; renderGutter(); setResPath(null);
-      setConsole("Консоль", "Выбери файл слева или создай новый.", "muted");
+      setConsole("Вывод", "Выбери файл слева или создай новый.", "muted");
       loadFileList();
     }
   }
 
   /* ════════════════ tools view ════════════════ */
   const TOOLS = [
-    { id: "hash", label: "Хеш-пароль", card: "toolHash" },
+    { id: "hash", label: "Хеш пароля", card: "toolHash" },
     { id: "awg", label: "AWG → YAML", card: "toolAwg" },
     { id: "toml", label: "TOML → YAML", card: "toolToml" },
     { id: "openvpn", label: "OpenVPN → YAML", card: "toolOpenvpn" },
@@ -1094,31 +1120,42 @@
   }
   function copyField(id) {
     const el = $(id); if (!el || !el.value) return;
-    el.select();
-    if (navigator.clipboard) navigator.clipboard.writeText(el.value);
-    else document.execCommand("copy");
-    showToast("Скопировано", "ok");
+    ui.copy(el.value).then(() => showToast("Скопировано", "ok"));
   }
 
   /* ── bindings ───────────────────────────────────────────── */
-  document.querySelectorAll(".nav-item").forEach((a) =>
-    a.addEventListener("click", () => switchView(a.dataset.view)));
+  document.querySelectorAll(".act-btn[data-view]").forEach((b) =>
+    b.addEventListener("click", () => switchView(b.dataset.view)));
 
   $("validateBtn").addEventListener("click", validate);
   $("applyBtn").addEventListener("click", () => apply(false));
-  $("applyFullBtn").addEventListener("click", () => {
-    if (!confirm("Полная перезагрузка пересоздаёт порты/листенеры/TUN и разорвёт текущие соединения. Продолжить?")) return;
+  async function applyFull() {
+    if (!(await ui.confirm({ title: "Полностью применить?", text: "Пересоздаёт порты, листенеры и TUN и разрывает текущие соединения.", okText: "Применить полностью", danger: true }))) return;
     apply(true);
+  }
+  $("applyMenuBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    ui.menu($("applyMenuBtn"), [
+      { label: "Применить", hint: "мягко · Ctrl+S", onSelect: () => apply(false) },
+      { label: "Полностью применить", hint: "порты, листенеры, TUN", danger: true, onSelect: applyFull },
+    ]);
   });
-  $("reloadBtn").addEventListener("click", () => {
-    if (dirty && !confirm("Изменения не сохранены. Сбросить и перечитать с диска?")) return;
+  $("reloadBtn").addEventListener("click", async () => {
+    if (dirty && !(await ui.confirm({ title: "Сбросить правки?", text: "Конфиг будет перечитан с диска, несохранённые изменения пропадут.", okText: "Сбросить", danger: true }))) return;
     loadConfig();
+  });
+  $("logoutBtn").addEventListener("click", logout);
+  $("actToggle").addEventListener("click", () =>
+    setActExpanded(!document.body.classList.contains("act-expanded")));
+  $("consoleToggle").addEventListener("click", () => {
+    const c = $("console").classList.toggle("collapsed");
+    $("consoleToggle").setAttribute("aria-expanded", String(!c));
   });
 
   // resource actions (both script & provider button groups call the same fns)
-  const reload = () => {
+  const reload = async () => {
     if (!curFile) { loadFileList(); return; }
-    if (dirty && !confirm("Изменения не сохранены. Перечитать с диска?")) return;
+    if (dirty && !(await ui.confirm({ title: "Перечитать с диска?", text: "Несохранённые изменения пропадут.", okText: "Перечитать", danger: true }))) return;
     openFile(curFile);
   };
   $("scrReloadBtn").addEventListener("click", reload);
@@ -1139,8 +1176,7 @@
   $("jsonImport").addEventListener("click", importJson);
   $("resPathCopy").addEventListener("click", () => {
     const t = $("resPathText").textContent; if (!t) return;
-    if (navigator.clipboard) navigator.clipboard.writeText(t);
-    showToast("Путь скопирован", "ok");
+    ui.copy(t).then(() => showToast("Путь скопирован", "ok"));
   });
   $("hashGen").addEventListener("click", genHash);
   $("hashCopy").addEventListener("click", () => copyField("hashOut"));
@@ -1160,7 +1196,8 @@
   window.addEventListener("resize", paintHL);   // пересчёт компенсации скроллбаров
 
   /* ── init ───────────────────────────────────────────────── */
-  applyChrome("yaml");      // показать колонку разделов для конфига
+  setActExpanded(window.innerWidth >= 1100);   // на широком экране подписи видны сразу
+  applyChrome("yaml");      // проводник с разделами конфига
   renderGutter();
   loadConfig();
   refreshStatus();

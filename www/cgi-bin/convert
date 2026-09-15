@@ -36,6 +36,7 @@ if [ ! -s "$SRC" ]; then
 fi
 
 # ─────────────── AWG / WireGuard ───────────────
+# shellcheck disable=SC2034  # awg-параметры читаются через eval
 parse_awg_config() {
   local config_file="$1"
   local awg_name="${2:-$(basename "$config_file" .conf)}"
@@ -49,10 +50,10 @@ read_cfg() {
     sed -E 's/^[[:space:]]+|[[:space:]]+$//g'
 }
 
-  local private_key=$(read_cfg "PrivateKey")
-  local address=$(read_cfg "Address")
-  local mtu=$(read_cfg "MTU")
-  local keepalive=$(read_cfg "PersistentKeepalive")
+  local private_key; private_key=$(read_cfg "PrivateKey")
+  local address; address=$(read_cfg "Address")
+  local mtu; mtu=$(read_cfg "MTU")
+  local keepalive; keepalive=$(read_cfg "PersistentKeepalive")
   # 3.0 разрешает диапазон, mihomo — только int. Берём нижнюю границу:
   # чаще keepalive = лишний трафик, зато NAT жив.
   case "$keepalive" in
@@ -61,29 +62,29 @@ read_cfg() {
       keepalive="${keepalive%%-*}"
       ;;
   esac
-  local workers=$(read_cfg "Workers")
+  local workers; workers=$(read_cfg "Workers")
 
-  local jc=$(read_cfg "Jc");         local jmin=$(read_cfg "Jmin");     local jmax=$(read_cfg "Jmax")
-  local s1=$(read_cfg "S1");         local s2=$(read_cfg "S2")
-  local s3=$(read_cfg "S3");         local s4=$(read_cfg "S4")
-  local h1=$(read_cfg "H1");         local h2=$(read_cfg "H2");         local h3=$(read_cfg "H3");         local h4=$(read_cfg "H4")
-  local i1=$(read_cfg "I1");         local i2=$(read_cfg "I2");         local i3=$(read_cfg "I3")
-  local i4=$(read_cfg "I4");         local i5=$(read_cfg "I5")
-  local j1=$(read_cfg "J1");         local j2=$(read_cfg "J2");         local j3=$(read_cfg "J3")
-  local itime=$(read_cfg "ITime")
+  local jc; jc=$(read_cfg "Jc");         local jmin; jmin=$(read_cfg "Jmin");     local jmax; jmax=$(read_cfg "Jmax")
+  local s1; s1=$(read_cfg "S1");         local s2; s2=$(read_cfg "S2")
+  local s3; s3=$(read_cfg "S3");         local s4; s4=$(read_cfg "S4")
+  local h1; h1=$(read_cfg "H1");         local h2; h2=$(read_cfg "H2");         local h3; h3=$(read_cfg "H3");         local h4; h4=$(read_cfg "H4")
+  local i1; i1=$(read_cfg "I1");         local i2; i2=$(read_cfg "I2");         local i3; i3=$(read_cfg "I3")
+  local i4; i4=$(read_cfg "I4");         local i5; i5=$(read_cfg "I5")
+  local j1; j1=$(read_cfg "J1");         local j2; j2=$(read_cfg "J2");         local j3; j3=$(read_cfg "J3")
+  local itime; itime=$(read_cfg "ITime")
 
   # ── AmneziaWG 3.0. Значения кроме ключа могут быть диапазоном "a-b",
   # поэтому в mihomo это строковые поля.
-  local hp_key=$(read_cfg "HeaderProtectionKey")
-  local content_padding=$(read_cfg "ContentPaddingAddition")
-  local rekey_after=$(read_cfg "RekeyAfterTime")
-  local rekey_timeout=$(read_cfg "RekeyTimeout")
-  local reject_after=$(read_cfg "RejectAfterTime")
-  local keepalive_timeout=$(read_cfg "KeepaliveTimeout")
-  local max_handshakes=$(read_cfg "MaxHandshakeAttempts")
+  local hp_key; hp_key=$(read_cfg "HeaderProtectionKey")
+  local content_padding; content_padding=$(read_cfg "ContentPaddingAddition")
+  local rekey_after; rekey_after=$(read_cfg "RekeyAfterTime")
+  local rekey_timeout; rekey_timeout=$(read_cfg "RekeyTimeout")
+  local reject_after; reject_after=$(read_cfg "RejectAfterTime")
+  local keepalive_timeout; keepalive_timeout=$(read_cfg "KeepaliveTimeout")
+  local max_handshakes; max_handshakes=$(read_cfg "MaxHandshakeAttempts")
   # AmneziaWG 3.1 boolean options.
-  local random_trailers=$(read_cfg "RandomTrailers")
-  local disable_cookies=$(read_cfg "DisableCookies")
+  local random_trailers; random_trailers=$(read_cfg "RandomTrailers")
+  local disable_cookies; disable_cookies=$(read_cfg "DisableCookies")
   case "$(printf '%s' "$random_trailers" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on) random_trailers=true ;;
     0|false|no|off) random_trailers=false ;;
@@ -95,11 +96,11 @@ read_cfg() {
     *) disable_cookies="" ;;
   esac
   # override для 3.0 без v3-параметров: строка AwgVersion = 3 в .conf
-  local awg_version=$(read_cfg "AwgVersion")
+  local awg_version; awg_version=$(read_cfg "AwgVersion")
 
-  local public_key=$(read_cfg "PublicKey")
-  local psk=$(read_cfg "PresharedKey")
-  local endpoint=$(read_cfg "Endpoint")
+  local public_key; public_key=$(read_cfg "PublicKey")
+  local psk; psk=$(read_cfg "PresharedKey")
+  local endpoint; endpoint=$(read_cfg "Endpoint")
 
   local ip_v4=""
   local ip_v6=""
@@ -132,7 +133,7 @@ read_cfg() {
     fi
   fi
 
-  local allowed_ips_raw=$(read_cfg "AllowedIPs")
+  local allowed_ips_raw; allowed_ips_raw=$(read_cfg "AllowedIPs")
   if [ -n "$allowed_ips_raw" ]; then
     allowed_ips_yaml=$(echo "$allowed_ips_raw" | tr ',' '\n' | \
       sed -E 's/^[[:space:]]*([0-9a-fA-F\.:\/-]+)[[:space:]]*$/\1/' | \
@@ -164,7 +165,7 @@ read_cfg() {
     # S1-S4 идут как nonce для header protection: ядро требует >= 12
     if [ -n "$hp_key" ]; then
       for v in s1 s2 s3 s4; do
-        eval val=\$$v
+        eval "val=\$$v"
         # отсутствующий S* не предупреждение: ядро возьмёт его дефолт
         [ -n "$val" ] || continue
         case "$val" in *[!0-9]*) val=0 ;; esac
@@ -187,16 +188,16 @@ read_cfg() {
   [ -n "$psk" ] && printf '    pre-shared-key: %s\n' "$(q "$psk")"
   [ -n "$(n "$keepalive")" ] && echo "    persistent-keepalive: $(n "$keepalive")"
   [ -n "$(n "$mtu")" ] && echo "    mtu: $(n "$mtu")"
-  local dialer_proxy_raw=$(read_cfg "DialerProxy")
+  local dialer_proxy_raw; dialer_proxy_raw=$(read_cfg "DialerProxy")
   if [ -n "$dialer_proxy_raw" ]; then
-    local dialer_proxy_clean=$(echo "$dialer_proxy_raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/^["'\'']|["'\'']$//g')
+    local dialer_proxy_clean; dialer_proxy_clean=$(echo "$dialer_proxy_raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/^["'\'']|["'\'']$//g')
     [ -n "$dialer_proxy_clean" ] && printf '    dialer-proxy: %s\n' "$(q "$dialer_proxy_clean")"
   fi
   [ -n "$(n "$workers")" ] && echo "    workers: $(n "$workers")"
 
-  local reserved_raw=$(read_cfg "Reserved")
+  local reserved_raw; reserved_raw=$(read_cfg "Reserved")
   if [ -n "$reserved_raw" ]; then
-    local reserved_clean=$(echo "$reserved_raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/^["'\'']|["'\'']$//g')
+    local reserved_clean; reserved_clean=$(echo "$reserved_raw" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/^["'\'']|["'\'']$//g')
     if [ -n "$reserved_clean" ]; then
       if echo "$reserved_clean" | grep -q ','; then
         echo "    reserved: [$reserved_clean]"
@@ -211,14 +212,14 @@ read_cfg() {
   echo "    ip-stack:"
   echo "      mode: mips"
   echo "      congestion-controller: bbr3"
-  local dns_raw=$(read_cfg "DNS")
+  local dns_raw; dns_raw=$(read_cfg "DNS")
   if [ -n "$dns_raw" ] && ! echo "$dns_raw" | grep -q '\$'; then
-    local dns_list=$(echo "$dns_raw" | tr ',' '\n' | \
+    local dns_list; dns_list=$(echo "$dns_raw" | tr ',' '\n' | \
       sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | \
       grep -v '^$' | sed 's/.*/"&"/' | paste -sd, -)
     echo "    dns: [$dns_list]"
   fi
-  local remote_resolve_raw=$(read_cfg "RemoteDnsResolve")
+  local remote_resolve_raw; remote_resolve_raw=$(read_cfg "RemoteDnsResolve")
   case "$(printf '%s' "$remote_resolve_raw" | tr '[:upper:]' '[:lower:]')" in
     1|true|yes|on) echo "    remote-dns-resolve: true" ;;
     0|false|no|off) echo "    remote-dns-resolve: false" ;;
@@ -229,14 +230,14 @@ read_cfg() {
   awg_params="$awg_params reject_after keepalive_timeout max_handshakes random_trailers disable_cookies"
   local has_awg_param=0
   for v in i1 i2 i3 i4 i5; do
-    eval val=\$$v
+    eval "val=\$$v"
     case "$val" in
       \<*\>) ;;
       *) eval "$v=" ;;
     esac
   done
   for v in $awg_params; do
-    eval val=\$$v
+    eval "val=\$$v"
     [ -n "$val" ] && has_awg_param=1
   done
 
@@ -244,15 +245,15 @@ read_cfg() {
     echo "    amnezia-wg-option:"
     # jc/jmin/jmax/s*/h*/j*/itime — int; i1-i5 — строки-шаблоны пакетов
     for v in jc jmin jmax s1 s2 s3 s4 h1 h2 h3 h4; do
-      eval val=\$$v
+      eval "val=\$$v"
       [ -n "$(n "$val")" ] && echo "      $v: $(n "$val")"
     done
     for v in i1 i2 i3 i4 i5; do
-      eval val=\$$v
+      eval "val=\$$v"
       [ -n "$val" ] && printf '      %s: %s\n' "$v" "$(q "$val")"
     done
     for v in j1 j2 j3 itime; do
-      eval val=\$$v
+      eval "val=\$$v"
       [ -n "$(n "$val")" ] && echo "      $v: $(n "$val")"
     done
     if [ "$awg3" -eq 1 ]; then

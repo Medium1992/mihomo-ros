@@ -1,0 +1,72 @@
+#!/bin/sh
+# POST text/plain: строка 1 — логин, строка 2 — пароль -> сессия + cookie sid.
+# Returns: { "ok": bool, "output": "...", "retryAfter": N }
+# Перебор: после 5 ошибок подряд 30 с блокировки (429), после каждой ошибки
+# пауза min(попыток,3) с. Счётчик один на панель, сбрасывается успешным входом.
+AUTH_PUBLIC=1
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
+
+FAIL_FILE="${SESSION_DIR%/*}/auth-fail"
+LOCK_AFTER=5
+LOCK_SECONDS=30
+
+if ! auth_required; then
+  send_json "200 OK"; printf '{"ok":true,"output":"вход выключен (WEB_AUTH=off)"}'; exit 0
+fi
+
+TMPDIR_="/dev/shm"; { [ -d "$TMPDIR_" ] && [ -w "$TMPDIR_" ]; } || TMPDIR_="/tmp"
+B="$TMPDIR_/.login.$$"
+read_body > "$B"
+trap 'rm -f "$B"' EXIT
+USER_IN="$(sed -n '1p' "$B" | tr -d '\r')"
+PASS_IN="$(sed -n '2p' "$B" | tr -d '\r')"
+if [ -z "$USER_IN" ] || [ -z "$PASS_IN" ]; then
+  send_json "400 Bad Request"; printf '{"ok":false,"output":"login incorrect"}'; exit 0
+fi
+
+now="$(date +%s)"
+count=0; ts=0
+[ -f "$FAIL_FILE" ] && read -r count ts < "$FAIL_FILE"
+case "$count" in ''|*[!0-9]*) count=0 ;; esac
+case "$ts" in ''|*[!0-9]*) ts=0 ;; esac
+if [ "$count" -ge "$LOCK_AFTER" ] && [ $((now - ts)) -lt "$LOCK_SECONDS" ]; then
+  send_json "429 Too Many Requests"
+  printf '{"ok":false,"output":"слишком много попыток","retryAfter":%s}' $((LOCK_SECONDS - (now - ts)))
+  exit 0
+fi
+
+# $1$ / $5$ / $6$: алгоритм и соль берём из самого хеша, считаем тем же openssl
+# shellcheck disable=SC2016
+case "$WEB_PASSWORD_HASH" in
+  '$1$'*) ALG=-1 ;;
+  '$5$'*) ALG=-5 ;;
+  '$6$'*) ALG=-6 ;;
+  *)
+    echo "login: unsupported WEB_PASSWORD_HASH format (expected \$1\$, \$5\$ or \$6\$)" >&2
+    send_json "500 Internal Server Error"
+    printf '{"ok":false,"output":"хеш пароля в неподдерживаемом формате, см. лог контейнера"}'
+    exit 0 ;;
+esac
+SALT="$(printf '%s' "$WEB_PASSWORD_HASH" | cut -d'$' -f3)"
+CALC="$(printf '%s' "$PASS_IN" | openssl passwd "$ALG" -salt "$SALT" -stdin 2>/dev/null)"
+
+if [ "$USER_IN" = "$WEB_USER" ] && [ -n "$CALC" ] && [ "$CALC" = "$WEB_PASSWORD_HASH" ]; then
+  rm -f "$FAIL_FILE"
+  TOKEN="$(session_create "$WEB_USER")"
+  printf 'Status: 200 OK\r\n'
+  printf 'Content-Type: application/json; charset=utf-8\r\n'
+  printf 'Cache-Control: no-store\r\n'
+  printf 'Set-Cookie: sid=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800\r\n' "$TOKEN"
+  printf '\r\n{"ok":true}'
+  exit 0
+fi
+
+count=$((count + 1))
+printf '%s %s\n' "$count" "$now" > "$FAIL_FILE"
+echo "login failed for '$USER_IN' from ${REMOTE_ADDR:-?} (attempt $count)" >&2
+d="$count"; [ "$d" -gt 3 ] && d=3
+sleep "$d"
+send_json "401 Unauthorized"
+printf '{"ok":false,"output":"login incorrect"}'

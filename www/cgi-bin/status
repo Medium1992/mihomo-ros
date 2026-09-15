@@ -13,19 +13,13 @@ fi
 
 EXT_UI="$(_yaml external-ui)"
 
-# Состояние auth читаем из httpd.conf — это то, что реально применил httpd.
-# Пустой файл = BASIC_AUTH=off, дефолтный хеш = пароль admin.
-AUTH_OFF=false
-AUTH_DEFAULT=false
-if [ -s /etc/httpd.conf ]; then
-  grep -Fq '$1$mihomors$BipEGg3TOdgaQSFfGtisO1' /etc/httpd.conf && AUTH_DEFAULT=true
-else
-  AUTH_OFF=true
-fi
+# Состояние входа — из окружения, которое выставил entrypoint (CGI его наследуют)
+AUTH_OFF=false;     [ "${WEB_AUTH:-on}" = "off" ]      && AUTH_OFF=true
+AUTH_DEFAULT=false; [ "${WEB_AUTH_DEFAULT:-0}" = "1" ] && AUTH_DEFAULT=true
 
 send_json "200 OK"
 printf '{"running":%s,"version":"%s","config":"%s","apiPort":"%s","ui":"%s",'\
-'"authOff":%s,"authDefault":%s}' \
+'"authOff":%s,"authDefault":%s,"user":"%s"}' \
   "$RUNNING" "$VER" "$(printf '%s' "$CONFIG" | json_escape)" \
   "$API_PORT" "$(printf '%s' "$EXT_UI" | json_escape)" \
-  "$AUTH_OFF" "$AUTH_DEFAULT"
+  "$AUTH_OFF" "$AUTH_DEFAULT" "$(printf '%s' "${WEB_USER:-admin}" | json_escape)"

@@ -75,8 +75,7 @@ done
 
 CFG_MSG=""
 if [ -f "$SRC/config.yaml" ]; then
-  OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$SRC/config.yaml" 2>&1)"
-  if [ $? -ne 0 ]; then
+  if ! OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$SRC/config.yaml" 2>&1)"; then
     SKIPPED=$((SKIPPED + 1))
     CFG_MSG="config.yaml из архива НЕ применён — не проходит проверку: $(printf '%s' "$OUT" | head -n3 | tr '\n' ' ')"
   else

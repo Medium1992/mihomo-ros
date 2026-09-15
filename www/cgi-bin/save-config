@@ -19,8 +19,7 @@ if [ ! -s "$CAND" ]; then
 fi
 
 # 1) validate (tmpfs candidate)
-OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"
-if [ $? -ne 0 ]; then
+if ! OUT="$(SAFE_PATHS="$TMPDIR_" mihomo -t -d "$MIHOMO_DIR" -f "$CAND" 2>&1)"; then
   ESC="$(printf '%s' "$OUT" | json_escape)"
   send_json "200 OK"
   printf '{"ok":false,"stage":"validate","output":"%s"}' "$ESC"
@@ -44,6 +43,7 @@ cp "$CAND" "$NEW" && mv -f "$NEW" "$CONFIG"
 NEW_EC="$(_yaml external-controller)"
 NEW_SEC="$(_yaml secret)"
 if [ "$OLD_EC" != "$NEW_EC" ] || [ "$OLD_SEC" != "$NEW_SEC" ]; then
+  # shellcheck disable=SC2046  # pidof может вернуть несколько PID
   kill -9 $(pidof mihomo) 2>/dev/null || true
   send_json "200 OK"
   printf '{"ok":true,"stage":"restart","output":"Конфиг сохранён. Изменены external-controller/secret — ядро перезапускается (несколько секунд)."}'
@@ -58,8 +58,7 @@ fi
 #      true  — ПОЛНОСТЬЮ: пересоздаёт и листенеры/порты/TUN (нужно при смене
 #              mixed-port/allow-lan/bind-address/tun/listeners), рвёт соединения.
 FORCE="$(query_get force)"; [ "$FORCE" = "true" ] || FORCE="false"
-APIOUT="$(api PUT "/configs?force=$FORCE" "{\"path\":\"$CONFIG\"}" 2>&1)"
-if [ $? -ne 0 ]; then
+if ! APIOUT="$(api PUT "/configs?force=$FORCE" "{\"path\":\"$CONFIG\"}" 2>&1)"; then
   ESC="$(printf 'saved, but reload failed:\n%s' "$APIOUT" | json_escape)"
   send_json "200 OK"
   printf '{"ok":false,"stage":"apply","output":"%s"}' "$ESC"

@@ -1,0 +1,12 @@
+#!/bin/sh
+# POST -> удалить сессию и погасить cookie. Returns: { "ok": true }
+. /www/cgi-bin/_lib.sh
+. /www/cgi-bin/_guard.sh
+guard_json
+
+session_destroy "$(session_from_cookie)"
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store\r\n'
+printf 'Set-Cookie: sid=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0\r\n'
+printf '\r\n{"ok":true}'
