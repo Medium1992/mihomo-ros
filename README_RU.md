@@ -196,4 +196,5 @@ docker build --build-arg MIHOMO_CUSTOM_CORE=1 --build-arg MIHOMO_FLAVOR=gvisor -
 ## 💖 Поддержать проект
 
 - **USDT (TRC20):** `TWDDYD1nk5JnG6FxvEu2fyFqMCY9PcdEsJ`
+- **USDT (Polygon PoS):** `0xa4f2d9035e8bacf4cdff27904f03ecc5479f7e17`
 - [boosty.to/petersolomon/donate](https://boosty.to/petersolomon/donate)
